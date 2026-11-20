@@ -1,0 +1,6 @@
+{
+  "name": "সাথী AI (Sathi AI)",
+  "description": "শিক্ষা, বিদেশে চাকরি, সাধারণ স্বাস্থ্য তথ্য, সোশ্যাল মিডিয়া কনটেন্ট, এআই ভিডিও ও ফটো এডিটিংয়ের জন্য আধুনিক বাংলা এআই সহকারী।",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
