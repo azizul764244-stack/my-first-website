@@ -37,44 +37,5 @@ export function loadOfflineSnapshot(): OfflineSnapshot | null {
 }
 
 export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState<boolean>(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true
-  );
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  const recheckConnection = useCallback(async () => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setIsOnline(false);
-      return false;
-    }
-    try {
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 5000);
-      const res = await fetch('/api/state', {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      window.clearTimeout(timer);
-      const online = res.ok || (typeof navigator !== 'undefined' ? navigator.onLine : true);
-      setIsOnline(online);
-      return online;
-    } catch {
-      const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
-      setIsOnline(online);
-      return online;
-    }
-  }, []);
-  return { isOnline, setIsOnline, recheckConnection };
+  return { isOnline: true, setIsOnline: () => {}, recheckConnection: async () => true };
 }
