@@ -53,28 +53,28 @@ export function useOnlineStatus() {
     };
   }, []);
 
-  const recheckConnection = useCallback(async (): Promise<boolean> => {
+  const recheckConnection = useCallback(async () => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setIsOnline(false);
       return false;
     }
     try {
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 3500);
+      const timer = window.setTimeout(() => controller.abort(), 5000);
       const res = await fetch('/api/state', {
         method: 'GET',
         cache: 'no-store',
         signal: controller.signal,
       });
       window.clearTimeout(timer);
-      const ok = res.ok;
-      setIsOnline(ok);
-      return ok;
+      const online = res.ok || (typeof navigator !== 'undefined' ? navigator.onLine : true);
+      setIsOnline(online);
+      return online;
     } catch {
-      setIsOnline(false);
-      return false;
+      const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setIsOnline(online);
+      return online;
     }
   }, []);
-
   return { isOnline, setIsOnline, recheckConnection };
 }
