@@ -219,8 +219,8 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {subscription.isPaid
-              ? t('Ad-free · Offline Mode ON (Pro)', 'বিজ্ঞাপনমুক্ত · অফলাইন মোড চালু (Pro)')
-              : t('Ad-supported · Offline Mode OFF', 'বিজ্ঞাপনযুক্ত · অফলাইন মোড বন্ধ')}
+              ? t('Ad-free · Priority Daily Quota', 'বিজ্ঞাপনমুক্ত · উচ্চ দৈনিক কোটা')
+              : t('Ad-supported · Offline Saved Data ON', 'বিজ্ঞাপনযুক্ত · অফলাইনে সেভড ডেটা চালু')}
           </p>
         </div>
       </div>
@@ -254,7 +254,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
                 )}
               </li>
               <li>• {t('Ads enabled (Entry, Banner & 5s Study Ad)', 'বিজ্ঞাপন চালু (প্রবেশ, ব্যানার ও পড়াশোনার Ad)')}</li>
-              <li>• {t('Offline Mode OFF (Requires Data / Wi-Fi)', 'অফলাইন মোড বন্ধ (ডাটা / Wi-Fi আবশ্যক)')}</li>
+              <li>• {t('Offline Saved Chats & Notes ON (Local Storage)', 'অফলাইনে সেভড চ্যাট ও শিক্ষার নোট পড়া যাবে')}</li>
             </ul>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
@@ -297,7 +297,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
                 )}
               </li>
               <li>• {t('Zero Ads (All 3 Ad Slots Turned OFF)', 'সব বিজ্ঞাপন বন্ধ (সম্পূর্ণ অ্যাড-মুক্ত)')}</li>
-              <li>• {t('Offline Mode ON (Read Saved Chats & Study Notes)', 'অফলাইন মোড চালু (আগের চ্যাট ও শিক্ষার নোট)')}</li>
+              <li>• {t('Priority AI Speed & All Model Modes', 'দ্রুতগতির AI উত্তর ও সকল মডেল সুবিধা')}</li>
             </ul>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs font-semibold text-blue-700 dark:text-blue-400">
@@ -340,7 +340,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
                 )}
               </li>
               <li>• {t('Zero Ads (Entry, Banner & Forced Ad Disabled)', 'সম্পূর্ণ বিজ্ঞাপনমুক্ত অভিজ্ঞতা (সব Ad বন্ধ)')}</li>
-              <li>• {t('Offline Mode ON (Chats + Study Notes without Data)', 'অফলাইন মোড চালু (ডাটা ছাড়াই চ্যাট ও নোট)')}</li>
+              <li>• {t('Highest Monthly Quota + Saved Chats & Notes', 'সর্বোচ্চ মাসিক কোটা ও সংরক্ষিত চ্যাট-নোট সুবিধা')}</li>
             </ul>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs font-semibold text-blue-700 dark:text-blue-400">

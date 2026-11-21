@@ -2371,7 +2371,7 @@ const SettingsAndAdsTab: React.FC<{
             <p>২. সব সময় ব্যানার: Home, Chat ও Tools পেজে ১টি স্থায়ী ছোট Banner Ad</p>
             <p>৩. শিক্ষা বাধ্যতামূলক Ad: প্রশ্ন করার পর উত্তর দেখানোর আগে ৫ সেকেন্ডের Forced Ad</p>
             <p className="font-semibold text-emerald-700 dark:text-emerald-300 pt-0.5">
-              ✓ Pro প্ল্যানে সব Ad স্বয়ংক্রিয়ভাবে বন্ধ থাকে + অফলাইন মোড চালু হয়
+              ✓ Pro প্ল্যানে সব Ad স্বয়ংক্রিয়ভাবে বন্ধ থাকে (অফলাইন সেভড ডেটা ফ্রি ও প্রো সবার জন্য চালু)
             </p>
           </div>
 

@@ -436,8 +436,8 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
             <p className="text-sm text-blue-100 leading-relaxed">{ads.interstitial.description}</p>
             <p className="text-xs text-blue-200 pt-1">
               {t(
-                'Upgrade to Pro via bKash/Nagad to stop all ads & read saved chats and study notes offline!',
-                'Pro কিনলে সব বিজ্ঞাপন বন্ধ হবে এবং ইন্টারনেট ছাড়াই আগের চ্যাট ও শিক্ষার নোট দেখতে পারবেন!'
+                'Upgrade to Pro via bKash/Nagad to stop all ads and get 200+ daily AI requests!',
+                'Pro কিনলে সব বিজ্ঞাপন বন্ধ হবে এবং দৈনিক ২০০+ এআই অনুরোধ ব্যবহার করতে পারবেন!'
               )}
             </p>
           </div>

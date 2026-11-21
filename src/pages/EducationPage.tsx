@@ -456,7 +456,7 @@ export const EducationPage: React.FC<EducationPageProps> = ({
         </div>
       )}
 
-      {/* Saved Study Notes (Offline Pro Access) */}
+      {/* Saved Study Notes (Offline Local Storage) */}
       {educationHistory.length > 0 && (
         <section className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -465,15 +465,10 @@ export const EducationPage: React.FC<EducationPageProps> = ({
                 {t('Saved Study Notes', 'সংরক্ষিত শিক্ষার নোট')} ({educationHistory.length})
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {isPaidUser
-                  ? t(
-                      'Offline Pro Access ON — Readable anytime even without Data / Wi-Fi.',
-                      'অফলাইন Pro সুবিধা চালু — ডাটা বা Wi-Fi ছাড়াই যেকোনো সময় পড়তে পারবেন।'
-                    )
-                  : t(
-                      'Upgrade to Pro to access saved study notes offline without Data / Wi-Fi.',
-                      'ডাটা বা Wi-Fi ছাড়া অফলাইনে নোট পড়তে Pro প্ল্যান নিন।'
-                    )}
+                {t(
+                  'Saved in local storage — Readable anytime even without Data / Wi-Fi.',
+                  'লোকাল স্টোরেজে সংরক্ষিত — ডাটা বা Wi-Fi ছাড়াই যেকোনো সময় পড়তে পারবেন।'
+                )}
               </p>
             </div>
           </div>

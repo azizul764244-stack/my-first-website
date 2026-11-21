@@ -458,17 +458,17 @@ export const NavigationShell: React.FC<NavigationShellProps> = ({
               </div>
             )}
 
-          {currentPage !== 'admin' && !isOnline && subscription.isPaid && (
+          {currentPage !== 'admin' && !isOnline && (
             <div className="mb-5 p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-100">
               <WifiOff className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold">
-                  {t('Offline Mode ON (Pro)', 'অফলাইন মোড চালু (Pro)')}
+                  {t('Offline Mode — Local Saved Data', 'অফলাইন মোড — সংরক্ষিত তথ্য')}
                 </p>
                 <p className="mt-0.5">
                   {t(
-                    'You have no internet connection, but Pro Offline Mode lets you read saved AI Chats and Study Notes.',
-                    'মোবাইল ডাটা বা Wi-Fi নেই — তবে Pro অফলাইন মোডের কারণে আগের চ্যাট ও শিক্ষার নোট পড়তে পারছেন।'
+                    'You are currently offline. Saved AI Chats and Study Notes remain available from local storage.',
+                    'এই মুহূর্তে ইন্টারনেট সংযোগ নেই — তবে লোকাল স্টোরেজে থাকা আগের চ্যাট ও শিক্ষার নোট পড়তে পারবেন।'
                   )}
                 </p>
               </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Crown, Loader2, RefreshCw, WifiOff } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   BottomBannerAd,
   InterstitialAdModal,
@@ -21,6 +21,7 @@ import { VideoStudioPage } from './pages/VideoStudioPage';
 import { normalizeLanguageCode } from './constants/languages';
 import { adminFetch, setStoredAdminToken } from './utils/adminToken';
 import {
+  createFallbackOfflineState,
   loadOfflineSnapshot,
   saveOfflineSnapshot,
   useOnlineStatus,
@@ -91,7 +92,6 @@ function AppInner({
   const [interstitialOpen, setInterstitialOpen] = useState(false);
   const [interstitialMode, setInterstitialMode] = useState<InterstitialAdMode>('entry');
   const [interstitialShownCount, setInterstitialShownCount] = useState(0);
-  const [retryingOnline, setRetryingOnline] = useState(false);
 
   const [pendingEducationQuestion, setPendingEducationQuestion] = useState<string>('');
   const [pendingVideoPrompt, setPendingVideoPrompt] = useState<string>('');
@@ -260,68 +260,6 @@ function AppInner({
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-200 gap-3">
         <Loader2 className="w-7 h-7 animate-spin text-blue-700 dark:text-blue-400" />
         <p className="text-sm font-medium">{t('Loading Sathi AI...', 'সাথী AI লোড হচ্ছে...')}</p>
-      </div>
-    );
-  }
-
-  // Offline Gate:
-  // - Pro users (subscription.isPaid === true): Offline Mode ON (full access to saved chats & study notes)
-  // - Free users (!subscription.isPaid): Offline Mode OFF -> show "No Internet" blocking screen
-  const isPaidUser = Boolean(appState?.subscription?.isPaid);
-  if ((!isOnline || !appState) && !isPaidUser && currentPage !== 'admin') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-5">
-        <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 text-center shadow-xl space-y-5">
-          <div className="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 mx-auto flex items-center justify-center">
-            <WifiOff className="w-8 h-8" />
-          </div>
-
-          <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              {t('No Internet Connection', 'No Internet — ইন্টারনেট সংযোগ নেই')}
-            </h1>
-            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              {t(
-                'Mobile Data or Wi-Fi is required on the Free Plan. Please turn on your internet connection to continue using Sathi AI.',
-                'ডাটা বা Wi-Fi ছাড়া ফ্রি প্ল্যানে সাথী AI চলবে না। অনুগ্রহ করে মোবাইল ডাটা বা Wi-Fi চালু করুন।'
-              )}
-            </p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/35 border border-blue-200 dark:border-blue-900 text-left space-y-1.5 text-xs">
-            <p className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-              <Crown className="w-4 h-4 text-amber-500" />
-              <span>{t('Unlock Offline Mode with Pro', 'Pro কিনলে Offline-এও চলবে')}</span>
-            </p>
-            <p className="text-blue-800 dark:text-blue-300 leading-relaxed">
-              {t(
-                'Pro / Limit Plan unlocks Offline Mode ON so you can read saved AI chats and study notes even without internet, with zero ads.',
-                'Pro / Limit প্ল্যান কিনলে সব Ad বন্ধ থাকবে এবং ডাটা বা Wi-Fi ছাড়াই আগের চ্যাট ও শিক্ষার নোট পড়তে পারবেন।'
-              )}
-            </p>
-          </div>
-
-          {loadError && isOnline && (
-            <p className="text-xs text-rose-600 dark:text-rose-400">{loadError}</p>
-          )}
-
-          <button
-            type="button"
-            disabled={retryingOnline}
-            onClick={async () => {
-              setRetryingOnline(true);
-              try {
-                await onRetryConnection();
-              } finally {
-                setRetryingOnline(false);
-              }
-            }}
-            className="w-full min-h-[46px] px-5 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${retryingOnline ? 'animate-spin' : ''}`} />
-            <span>{retryingOnline ? t('Checking...', 'যাচাই হচ্ছে...') : t('Retry Connection', 'আবার চেষ্টা করুন')}</span>
-          </button>
-        </div>
       </div>
     );
   }
@@ -615,16 +553,11 @@ export default function App() {
         setAdminSession(sessionData);
       }
       setLoadError(null);
-    } catch (err) {
+    } catch {
       const snapshot = loadOfflineSnapshot();
-      if (snapshot && snapshot.state.subscription.isPaid) {
-        applyAppState(snapshot.state);
-        setIsOnline(false);
-        setLoadError(null);
-      } else {
-        setIsOnline(false);
-        setLoadError(err instanceof Error ? err.message : 'Connection error.');
-      }
+      applyAppState(snapshot ? snapshot.state : createFallbackOfflineState());
+      setIsOnline(false);
+      setLoadError(null);
     } finally {
       setLoading(false);
     }

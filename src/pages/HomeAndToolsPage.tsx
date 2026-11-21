@@ -339,9 +339,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                 {subscription.isPaid
                   ? subscription.expiresAt
-                    ? `${t('Offline ON · Zero Ads · Expires', 'অফলাইন চালু · অ্যাড-মুক্ত · মেয়াদ')} ${formatDate(subscription.expiresAt)}`
-                    : t('Offline Mode ON · Zero Ads Active', 'অফলাইন মোড চালু · সম্পূর্ণ বিজ্ঞাপনমুক্ত')
-                  : t('Offline OFF · Pro unlocks Offline + Ad-Free (৳200)', 'অফলাইন বন্ধ · Pro নিলে অফলাইন + অ্যাড-মুক্ত')}
+                    ? `${t('Zero Ads · Pro Active · Expires', 'বিজ্ঞাপনমুক্ত · প্রো সক্রিয় · মেয়াদ')} ${formatDate(subscription.expiresAt)}`
+                    : t('Zero Ads · Pro Plan Active', 'বিজ্ঞাপনমুক্ত · প্রো প্ল্যান সক্রিয়')
+                  : t('Offline Saved Data ON · Pro removes Ads (৳200)', 'অফলাইনে সেভড ডেটা চালু · Pro নিলে বিজ্ঞাপনমুক্ত (৳২০০)')}
               </span>
               <button
                 type="button"

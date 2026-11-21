@@ -346,8 +346,8 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
     if (!isOnline) {
       setError(
         t(
-          'You are offline — reading saved Pro chats. Reconnect to Mobile Data or Wi-Fi to send new messages.',
-          'আপনি অফলাইনে আছেন — সংরক্ষিত Pro চ্যাট পড়ছেন। নতুন প্রশ্ন করতে ডাটা বা Wi-Fi চালু করুন।'
+          'You are offline — reading saved chats from local storage. Reconnect to Mobile Data or Wi-Fi to send new messages.',
+          'আপনি অফলাইনে আছেন — লোকাল স্টোরেজে সংরক্ষিত চ্যাট পড়ছেন। নতুন প্রশ্ন করতে ডাটা বা Wi-Fi চালু করুন।'
         )
       );
       return;
@@ -877,8 +877,8 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
               <WifiOff className="w-4 h-4 shrink-0" />
               <span>
                 {t(
-                  'Offline Mode ON (Pro) — Viewing saved AI chat history without internet.',
-                  'অফলাইন মোড চালু (Pro) — ইন্টারনেট ছাড়াই আগের চ্যাট দেখছেন।'
+                  'Offline Mode — Viewing saved AI chat history from local storage.',
+                  'অফলাইন মোড — ইন্টারনেট ছাড়াই সংরক্ষিত চ্যাট দেখছেন।'
                 )}
               </span>
             </div>
