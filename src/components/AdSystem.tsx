@@ -118,14 +118,13 @@ export const BottomBannerAd: React.FC<BottomBannerAdProps> = ({
   const effectiveAdSenseId = cfg.adsenseClientId || REAL_ADSENSE_PUBLISHER_ID;
   const hasLiveAdSenseSlot = isLiveAdMob && Boolean(effectiveAdSenseId && cfg.adsenseBannerSlot);
 
-  // Zero ads for Pro users; never interrupt urgent health assistance, admin, or checkout
+  // Zero ads for Pro users; never display floating/sticky ads or banners over chat, AI answers, input boxes, or bottom nav
   const shouldShow =
     ads.banner.enabled &&
     !isPaidUser &&
     !isTaskBusy &&
-    currentPage !== 'health' &&
-    currentPage !== 'admin' &&
-    currentPage !== 'subscription';
+    (currentPage === 'home' || currentPage === 'tools') &&
+    (hasLiveAdSenseSlot || isTestAd);
 
   useEffect(() => {
     if (shouldShow && isLiveAdMob && effectiveAdSenseId.startsWith('ca-pub-')) {
@@ -154,7 +153,7 @@ export const BottomBannerAd: React.FC<BottomBannerAdProps> = ({
       data-ad-mode={cfg.providerMode}
       data-ad-client={isLiveAdMob ? effectiveAdSenseId : undefined}
       data-ad-unit={activeIdentifier}
-      className="sticky bottom-[4.35rem] lg:bottom-2 z-20 mt-6 border border-blue-200 dark:border-blue-900/70 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl px-3.5 py-2.5 shadow-lg shadow-slate-900/5 space-y-2"
+      className="mt-8 border border-blue-200 dark:border-blue-900/70 bg-white dark:bg-slate-900 rounded-2xl px-3.5 py-2.5 shadow-sm space-y-2"
     >
       {hasLiveAdSenseSlot ? (
         <AdSenseUnitSlot
@@ -231,6 +230,7 @@ interface InterstitialAdModalProps {
   shownCount: number;
   countdownSeconds?: number;
   answerReady?: boolean;
+  answerFailed?: boolean;
   onClose: () => void;
   onNavigate: (page: AppPage) => void;
   onTrack: (event: 'interstitial_impression' | 'click') => void;
@@ -243,6 +243,7 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
   shownCount,
   countdownSeconds = 5,
   answerReady = false,
+  answerFailed = false,
   onClose,
   onNavigate,
   onTrack,
@@ -445,14 +446,25 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
 
         {/* Study Status Pill during Forced Ad */}
         {isForcedStudy && (
-          <div className="px-3.5 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200 font-medium flex items-center justify-between">
+          <div
+            className={`px-3.5 py-2.5 rounded-xl border text-xs font-medium flex items-center justify-between ${
+              answerFailed
+                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200'
+            }`}
+          >
             <span>
-              {answerReady
-                ? t('Your step-by-step solution is ready!', 'আপনার প্রশ্নের সমাধান তৈরি হয়ে গেছে!')
-                : t('AI is solving your question right now...', 'এআই আপনার প্রশ্নের উত্তর তৈরি করছে...')}
+              {answerFailed
+                ? t(
+                    'Could not complete the AI request. Skip to view details.',
+                    'এআই অনুরোধ সম্পন্ন করা যায়নি। Skip করে বিস্তারিত দেখুন।'
+                  )
+                : answerReady
+                  ? t('Your step-by-step solution is ready!', 'আপনার প্রশ্নের সমাধান তৈরি হয়ে গেছে!')
+                  : t('AI is solving your question right now...', 'এআই আপনার প্রশ্নের উত্তর তৈরি করছে...')}
             </span>
             <span className="font-mono font-bold tabular-nums">
-              {canSkip ? t('Ready', 'প্রস্তুত') : `${secondsLeft}s`}
+              {canSkip ? (answerFailed ? t('Notice', 'বার্তা') : t('Ready', 'প্রস্তুত')) : `${secondsLeft}s`}
             </span>
           </div>
         )}
@@ -473,7 +485,9 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
           >
             {canSkip
               ? isForcedStudy
-                ? t('View Answer (Skip Ad)', 'উত্তর দেখুন (Skip Ad)')
+                ? answerFailed
+                  ? t('Close Ad & View Error', 'অ্যাড বন্ধ করে বার্তা দেখুন')
+                  : t('View Answer (Skip Ad)', 'উত্তর দেখুন (Skip Ad)')
                 : t('Continue to Sathi AI', 'সাথী AI-তে প্রবেশ করুন')
               : t(`Wait ${secondsLeft}s to Skip`, `Skip করতে ${secondsLeft}s অপেক্ষা করুন`)}
           </button>

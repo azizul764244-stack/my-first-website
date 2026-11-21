@@ -362,6 +362,8 @@ export const PhotoEditorPage: React.FC<PhotoEditorPageProps> = ({
         onQuotaUpdate(res.quota);
       }
     } catch (err) {
+      setGeneratedImageUrl(null);
+      setGeneratedNote(null);
       if (err instanceof AiClientError) {
         setGenError(err.message);
         setGenErrorCode(err.errorCode);
@@ -417,7 +419,7 @@ export const PhotoEditorPage: React.FC<PhotoEditorPageProps> = ({
           enhancementTipBn: string;
         };
         quota: QuotaState;
-      }>('/api/ai/photo-advisor', { topic: thumbTopic, responseLanguage });
+      }>('/api/ai/photo-advisor', { topic: thumbTopic, responseLanguage, modelId: activeModel });
       setAdvisorResult(data.advice);
       if (data.advice?.headlineSuggestions?.[0]) {
         setThumbTitle(data.advice.headlineSuggestions[0]);
@@ -427,6 +429,7 @@ export const PhotoEditorPage: React.FC<PhotoEditorPageProps> = ({
       }
       onQuotaUpdate(data.quota);
     } catch (err) {
+      setAdvisorResult(null);
       if (err instanceof AiClientError) {
         setAdvisorError(err.message);
         setAdvisorErrorCode(err.errorCode);

@@ -123,25 +123,30 @@ function AppInner({
 
   const handleToggleUiLang = (nextUi: 'en' | 'bn') => {
     setUiLang(nextUi);
-    if (responseLanguage === 'en' || responseLanguage === 'bn' || responseLanguage === 'auto') {
-      void onChangeLanguage(nextUi);
+    void onChangeLanguage(nextUi);
+  };
+
+  const handleSelectResponseLanguage = (nextLang: ResponseLanguageCode) => {
+    if (nextLang === 'en' || nextLang === 'bn') {
+      setUiLang(nextLang);
     }
+    void onChangeLanguage(nextLang);
   };
 
   const handleSwitchModel = async (modelId: GeminiModelId) => {
-    try {
-      const res = await adminFetch('/api/model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId }),
-      });
-      const data = await res.json();
-      if (res.ok && data.state) {
-        setAppState(data.state);
-      }
-    } catch {
-      // Ignore network hiccup
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('sathi_active_model', modelId);
     }
+    const res = await adminFetch('/api/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelId }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.state) {
+      throw new Error(data?.error || 'Could not switch Gemini model.');
+    }
+    setAppState(data.state);
   };
 
   const trackAdEvent = useCallback(
@@ -299,7 +304,7 @@ function AppInner({
         uiLang={uiLang}
         onToggleUiLang={handleToggleUiLang}
         responseLanguage={responseLanguage}
-        onChangeLanguage={onChangeLanguage}
+        onChangeLanguage={handleSelectResponseLanguage}
         activeModel={appState.integrations.geminiModel}
         availableModels={appState.integrations.availableModels}
         onSwitchModel={handleSwitchModel}
@@ -472,7 +477,7 @@ function AppInner({
             theme={theme}
             onToggleTheme={onToggleTheme}
             responseLanguage={responseLanguage}
-            onChangeLanguage={onChangeLanguage}
+            onChangeLanguage={handleSelectResponseLanguage}
             onStateSync={setAppState}
             onNavigate={handleNavigate}
           />
@@ -523,16 +528,71 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [responseLanguage, setResponseLanguage] = useState<ResponseLanguageCode>('en');
+  const [responseLanguage, setResponseLanguage] = useState<ResponseLanguageCode>(() => {
+    if (typeof window !== 'undefined') {
+      const savedResp = window.localStorage.getItem('sathi_response_lang');
+      if (savedResp) return normalizeLanguageCode(savedResp);
+      const savedUi = window.localStorage.getItem('sathi_ui_lang');
+      if (savedUi === 'bn' || savedUi === 'en') return savedUi;
+    }
+    return 'en';
+  });
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const { isOnline, setIsOnline, recheckConnection } = useOnlineStatus();
 
   const applyAppState = useCallback((data: AppStateResponse) => {
-    setAppState(data);
-    saveOfflineSnapshot(data);
-    setTheme(data.user.theme || 'light');
-    setResponseLanguage(normalizeLanguageCode(data.user.preferredLanguage));
-    setActiveConversationId((prev) => prev ?? data.conversations?.[0]?.id ?? null);
+    let nextState = data;
+    if (typeof window !== 'undefined') {
+      const savedModel = window.localStorage.getItem('sathi_active_model') as GeminiModelId | null;
+      const isValidSaved =
+        savedModel && data.integrations.availableModels.some((m) => m.id === savedModel);
+      if (
+        isValidSaved &&
+        data.appSettings.aiSettings.allowUserModelSwitch &&
+        savedModel !== data.integrations.geminiModel
+      ) {
+        nextState = {
+          ...data,
+          integrations: {
+            ...data.integrations,
+            geminiModel: savedModel,
+          },
+        };
+        void adminFetch('/api/model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modelId: savedModel }),
+        }).catch(() => {});
+      }
+    }
+
+    setAppState(nextState);
+    saveOfflineSnapshot(nextState);
+    setTheme(nextState.user.theme || 'light');
+    if (typeof window !== 'undefined') {
+      const savedResp = window.localStorage.getItem('sathi_response_lang');
+      const savedUi = window.localStorage.getItem('sathi_ui_lang');
+      const localPreferred = savedResp
+        ? normalizeLanguageCode(savedResp)
+        : savedUi === 'bn' || savedUi === 'en'
+          ? savedUi
+          : null;
+      if (localPreferred) {
+        setResponseLanguage(localPreferred);
+        if (localPreferred !== nextState.user.preferredLanguage) {
+          void fetch('/api/language', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: localPreferred }),
+          }).catch(() => {});
+        }
+      } else {
+        setResponseLanguage(normalizeLanguageCode(nextState.user.preferredLanguage));
+      }
+    } else {
+      setResponseLanguage(normalizeLanguageCode(nextState.user.preferredLanguage));
+    }
+    setActiveConversationId((prev) => prev ?? nextState.conversations?.[0]?.id ?? null);
   }, []);
 
   const fetchState = useCallback(async () => {
@@ -617,6 +677,12 @@ export default function App() {
 
   const handleChangeLanguage = async (nextLang: ResponseLanguageCode) => {
     setResponseLanguage(nextLang);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('sathi_response_lang', nextLang);
+      if (nextLang === 'en' || nextLang === 'bn') {
+        window.localStorage.setItem('sathi_ui_lang', nextLang);
+      }
+    }
     try {
       const res = await fetch('/api/language', {
         method: 'POST',

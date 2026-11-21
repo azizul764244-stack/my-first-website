@@ -212,6 +212,7 @@ export const EducationPage: React.FC<EducationPageProps> = ({
           imageBase64,
           imageMimeType,
           responseLanguage,
+          modelId: activeModel,
         },
         {
           onDelta: (chunk) => {
@@ -271,7 +272,7 @@ export const EducationPage: React.FC<EducationPageProps> = ({
           <WifiOff className="w-4 h-4 shrink-0 mt-0.5" />
           <div>
             <p className="font-bold">
-              {t('Offline Mode Active (Pro Study Notes)', 'অফলাইন মোড সক্রিয় (Pro শিক্ষার নোট)')}
+              {t('Offline Mode — Saved Study Notes', 'অফলাইন মোড — সংরক্ষিত শিক্ষার নোট')}
             </p>
             <p className="mt-0.5">
               {t(
@@ -522,7 +523,8 @@ export const EducationPage: React.FC<EducationPageProps> = ({
         ads={ads}
         shownCount={1}
         countdownSeconds={5}
-        answerReady={Boolean(answer && !loading)}
+        answerReady={Boolean(answer && !loading && !error)}
+        answerFailed={Boolean(error && !loading)}
         onClose={() => {
           setForcedAdOpen(false);
           setAdGateCleared(true);

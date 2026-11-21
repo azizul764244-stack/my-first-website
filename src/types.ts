@@ -256,11 +256,11 @@ export interface AdSystemState {
 }
 
 export type GeminiModelId =
-  | 'gemini-4-hydrogen'
+  | 'gemini-2.5-flash'
+  | 'gemini-2.5-flash-lite'
+  | 'gemini-3.1-flash-lite-preview'
   | 'gemini-3.1-flash-lite'
-  | 'gemini-4-argon'
-  | 'gemini-4-neon'
-  | 'gemini-4-carbon';
+  | 'gemini-2.5-pro';
 
 export type AiErrorCode =
   | 'rate_limit'

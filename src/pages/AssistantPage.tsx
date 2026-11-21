@@ -143,6 +143,7 @@ interface PendingPayload {
   imageMimeType?: string;
   imageDataUrl?: string;
   responseLanguage: ResponseLanguageCode;
+  modelId?: GeminiModelId;
 }
 
 export const AssistantPage: React.FC<AssistantPageProps> = ({
@@ -381,7 +382,7 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
         conversation: ChatConversation;
         conversations: ChatConversation[];
         quota: QuotaState;
-      }>('/api/ai/chat', payload, {
+      }>('/api/ai/chat', { ...payload, modelId: activeModel }, {
         onDelta: (chunk) => {
           setStreamingText((prev) => prev + chunk);
         },
@@ -446,12 +447,17 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
       imageMimeType,
       imageDataUrl: imagePreview,
       responseLanguage,
+      modelId: activeModel,
     });
   };
 
   const handleRetryFailed = async () => {
     if (lastFailedPayloadRef.current) {
-      await sendPayload(lastFailedPayloadRef.current);
+      await sendPayload({
+        ...lastFailedPayloadRef.current,
+        responseLanguage,
+        modelId: activeModel,
+      });
     }
   };
 

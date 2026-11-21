@@ -31,38 +31,38 @@ import { getAdminConfigStatus } from './adminAuth';
 
 export const AVAILABLE_GEMINI_MODELS: GeminiModelOption[] = [
   {
-    id: 'gemini-4-hydrogen',
-    labelBn: 'Gemini 4 Hydrogen (প্রস্তাবিত)',
-    descriptionBn: 'বাংলা ও সাধারণ সকল কাজের জন্য দ্রুত ও সুষম মডেল',
-    tierNoteBn: 'স্ট্যান্ডার্ড / ফ্রি টিয়ার উপযোগী',
+    id: 'gemini-3.1-flash-lite-preview',
+    labelBn: 'Gemini 3.1 Flash Lite Preview (সুপারিশকৃত)',
+    descriptionBn: 'বাংলা, শিক্ষা ও চ্যাটের জন্য দ্রুত, নির্ভরযোগ্য এবং v1beta-তে সার্বজনীনভাবে সমর্থিত',
+    tierNoteBn: 'ফ্রি টিয়ার উপযোগী (v1beta সমর্থিত)',
     isFreeTier: true,
   },
   {
     id: 'gemini-3.1-flash-lite',
     labelBn: 'Gemini 3.1 Flash Lite',
-    descriptionBn: 'সর্বোচ্চ গতির হালকা মডেল — দ্রুত উত্তর ও লোড ব্যালেন্সিংয়ের জন্য',
-    tierNoteBn: 'স্ট্যান্ডার্ড / ফ্রি টিয়ার উপযোগী',
+    descriptionBn: 'সর্বোচ্চ গতি ও কম কোটা খরচের হালকা ৩.১ ফ্ল্যাশ মডেল',
+    tierNoteBn: 'ফ্রি টিয়ার উপযোগী',
     isFreeTier: true,
   },
   {
-    id: 'gemini-4-argon',
-    labelBn: 'Gemini 4 Argon',
-    descriptionBn: 'উন্নত বিশ্লেষণ ও ভারসাম্যপূর্ণ যুক্তি',
-    tierNoteBn: 'পেইড API কী প্রয়োজন হতে পারে',
-    isFreeTier: false,
+    id: 'gemini-2.5-flash',
+    labelBn: 'Gemini 2.5 Flash',
+    descriptionBn: 'পাবলিক Gemini API কী-তে শক্তিশালী টেক্সট, শিক্ষা ও চ্যাট মডেল',
+    tierNoteBn: 'ফ্রি টিয়ার উপযোগী (v1beta)',
+    isFreeTier: true,
   },
   {
-    id: 'gemini-4-neon',
-    labelBn: 'Gemini 4 Neon',
-    descriptionBn: 'জটিল গণিত, বিজ্ঞান ও কোডিং সমাধানের জন্য উচ্চ ক্ষমতার মডেল',
-    tierNoteBn: 'পেইড API কী প্রয়োজন হতে পারে',
-    isFreeTier: false,
+    id: 'gemini-2.5-flash-lite',
+    labelBn: 'Gemini 2.5 Flash Lite',
+    descriptionBn: 'কম কোটা খরচে দ্রুত উত্তরের জন্য ২.৫ ফ্ল্যাশ লাইট মডেল',
+    tierNoteBn: 'ফ্রি টিয়ার উপযোগী (v1beta)',
+    isFreeTier: true,
   },
   {
-    id: 'gemini-4-carbon',
-    labelBn: 'Gemini 4 Carbon',
-    descriptionBn: 'গভীর গবেষণা ও বহুমুখী বিশ্লেষণের জন্য',
-    tierNoteBn: 'পেইড API কী প্রয়োজন হতে পারে',
+    id: 'gemini-2.5-pro',
+    labelBn: 'Gemini 2.5 Pro',
+    descriptionBn: 'জটিল গণিত, বিজ্ঞান ও দীর্ঘ বিশ্লেষণের জন্য উচ্চ ক্ষমতার মডেল',
+    tierNoteBn: 'পেইড / প্রো API কোটা উপযোগী',
     isFreeTier: false,
   },
 ];
@@ -74,7 +74,7 @@ function resolveInitialModel(): GeminiModelId {
   if (envModel && VALID_MODEL_IDS.has(envModel)) {
     return envModel as GeminiModelId;
   }
-  return 'gemini-4-hydrogen';
+  return 'gemini-3.1-flash-lite-preview';
 }
 
 const createDefaultPlans = (): SubscriptionPlanConfig[] => [
@@ -325,7 +325,7 @@ const createDefaultDb = (): PersistedDatabase => {
             role: 'assistant',
             text: 'আমি বাংলা, ইংরেজি, হিন্দি, আরবি, উর্দুসহ ২১টির বেশি ভাষায় সহায়তা করতে পারি। আপনি মাইক্রোফোন বাটনে চাপ দিয়ে ভয়েসে প্রশ্ন করতে পারেন, উত্তর কণ্ঠে শুনতে পারেন এবং যেকোনো ছবি আপলোড করে তা বিশ্লেষণ বা ব্যাখ্যা পেতে পারেন।',
             language: 'bn',
-            modelUsed: 'gemini-4-hydrogen',
+            modelUsed: 'gemini-2.5-flash',
             createdAt: new Date(Date.now() - 1000 * 60 * 89).toISOString(),
           },
         ],
@@ -565,6 +565,11 @@ function ensureDbLoaded(): PersistedDatabase {
     dirty = true;
   }
 
+  if (!cachedDb.aiModel || !VALID_MODEL_IDS.has(cachedDb.aiModel)) {
+    cachedDb.aiModel = resolveInitialModel();
+    dirty = true;
+  }
+
   ensurePrimaryUserInList(cachedDb);
 
   if (dirty) {
@@ -587,6 +592,10 @@ function saveDb(db: PersistedDatabase): void {
   } catch (err) {
     console.error('Failed to persist store:', err);
   }
+}
+
+export function isValidGeminiModelId(modelId: string | undefined): modelId is GeminiModelId {
+  return Boolean(modelId && VALID_MODEL_IDS.has(modelId));
 }
 
 export function getActiveAiModel(): GeminiModelId {

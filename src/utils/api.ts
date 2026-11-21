@@ -59,6 +59,9 @@ function buildErrorFromPayload(
 const inFlightJsonRequests = new Map<string, Promise<unknown>>();
 const activeStreamUrls = new Set<string>();
 
+const DEFAULT_AI_TIMEOUT_MS = 75_000;
+const VIDEO_AI_TIMEOUT_MS = 210_000;
+
 export async function postAiJson<T>(url: string, body: unknown): Promise<T> {
   const dedupeKey = `${url}:${JSON.stringify(body)}`;
   const existing = inFlightJsonRequests.get(dedupeKey) as Promise<T> | undefined;
@@ -66,19 +69,32 @@ export async function postAiJson<T>(url: string, body: unknown): Promise<T> {
     return existing;
   }
 
+  const timeoutMs = url.includes('/video/') ? VIDEO_AI_TIMEOUT_MS : DEFAULT_AI_TIMEOUT_MS;
+
   const requestPromise = (async () => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new AiClientError(
+          'সার্ভার থেকে উত্তর আসতে নির্ধারিত সময় শেষ হয়ে গেছে (Timeout)। অনুগ্রহ করে আবার চেষ্টা করুন বা অন্য ফ্রি মডেল ব্যবহার করুন।',
+          { status: 504, errorCode: 'network' }
+        );
+      }
       throw new AiClientError(
         'নেটওয়ার্ক সংযোগে সমস্যা হয়েছে। অনুগ্রহ করে ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।',
         { errorCode: 'network' }
       );
+    } finally {
+      window.clearTimeout(timer);
     }
 
     let data: Record<string, unknown> | null = null;
@@ -121,11 +137,21 @@ export async function streamAiSse<TDone>(
   callbacks: StreamCallbacks<TDone>
 ): Promise<void> {
   if (activeStreamUrls.has(url)) {
-    // Prevent duplicate concurrent stream requests for the same tool
-    return;
+    throw new AiClientError(
+      'একটি অনুরোধ ইতিমধ্যেই প্রক্রিয়াধীন রয়েছে। অনুগ্রহ করে উত্তর আসা পর্যন্ত অপেক্ষা করুন।',
+      { status: 429, errorCode: 'rate_limit' }
+    );
   }
 
   activeStreamUrls.add(url);
+  const controller = new AbortController();
+  let timeoutId = window.setTimeout(() => controller.abort(), DEFAULT_AI_TIMEOUT_MS);
+
+  const resetActivityTimer = () => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => controller.abort(), DEFAULT_AI_TIMEOUT_MS);
+  };
+
   try {
     let response: Response;
     try {
@@ -136,8 +162,15 @@ export async function streamAiSse<TDone>(
           Accept: 'text/event-stream',
         },
         body: JSON.stringify({ ...(body as Record<string, unknown>), stream: true }),
+        signal: controller.signal,
       });
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new AiClientError(
+          'এআই সার্ভার থেকে উত্তর আসতে নির্ধারিত সময় শেষ হয়েছে (Timeout)। অনুগ্রহ করে আবার চেষ্টা করুন।',
+          { status: 504, errorCode: 'network' }
+        );
+      }
       throw new AiClientError(
         'নেটওয়ার্ক সংযোগে সমস্যা হয়েছে। অনুগ্রহ করে ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।',
         { errorCode: 'network' }
@@ -176,39 +209,55 @@ export async function streamAiSse<TDone>(
     let buffer = '';
     let receivedDone = false;
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split('\n\n');
-      buffer = events.pop() ?? '';
+        resetActivityTimer();
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
 
-      for (const rawEvent of events) {
-        const dataLines = rawEvent
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim());
+        for (const rawEvent of events) {
+          const dataLines = rawEvent
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trim());
 
-        if (dataLines.length === 0) continue;
-        const jsonText = dataLines.join('\n');
+          if (dataLines.length === 0) continue;
+          const jsonText = dataLines.join('\n');
 
-        let parsed: Record<string, unknown>;
-        try {
-          parsed = JSON.parse(jsonText) as Record<string, unknown>;
-        } catch {
-          continue;
-        }
+          let parsed: Record<string, unknown>;
+          try {
+            parsed = JSON.parse(jsonText) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
 
-        if (parsed.type === 'delta' && typeof parsed.text === 'string') {
-          callbacks.onDelta(parsed.text);
-        } else if (parsed.type === 'error') {
-          throw buildErrorFromPayload(undefined, parsed);
-        } else if (parsed.type === 'done') {
-          receivedDone = true;
-          callbacks.onDone(parsed as unknown as TDone);
+          if (parsed.type === 'delta' && typeof parsed.text === 'string') {
+            callbacks.onDelta(parsed.text);
+          } else if (parsed.type === 'error') {
+            throw buildErrorFromPayload(undefined, parsed);
+          } else if (parsed.type === 'done') {
+            receivedDone = true;
+            callbacks.onDone(parsed as unknown as TDone);
+          }
         }
       }
+    } catch (err) {
+      if (err instanceof AiClientError) {
+        throw err;
+      }
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new AiClientError(
+          'উত্তর সম্পূর্ণ হওয়ার আগেই সময় শেষ হয়েছে (Timeout)। অনুগ্রহ করে আবার চেষ্টা করুন।',
+          { status: 504, errorCode: 'network' }
+        );
+      }
+      throw new AiClientError('স্ট্রিমিং সংযোগ বিচ্ছিন্ন হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।', {
+        errorCode: 'network',
+      });
     }
 
     if (!receivedDone) {
@@ -217,6 +266,7 @@ export async function streamAiSse<TDone>(
       });
     }
   } finally {
+    window.clearTimeout(timeoutId);
     activeStreamUrls.delete(url);
   }
 }

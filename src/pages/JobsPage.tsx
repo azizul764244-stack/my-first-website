@@ -81,7 +81,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         quota: QuotaState;
       }>(
         '/api/ai/jobs',
-        { country, category, skills, responseLanguage },
+        { country, category, skills, responseLanguage, modelId: activeModel },
         {
           onDelta: (chunk) => {
             setAnswer((prev) => (prev ?? '') + chunk);
@@ -94,6 +94,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         }
       );
     } catch (err) {
+      setAnswer(null);
       if (err instanceof AiClientError) {
         setError(err.message);
         setErrorCode(err.errorCode);

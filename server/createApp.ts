@@ -36,6 +36,7 @@ import {
   getConversationById,
   getConversations,
   getFullState,
+  isValidGeminiModelId,
   recordAdminLog,
   recordApiLog,
   rejectPaymentRequest,
@@ -51,6 +52,7 @@ import {
 import {
   advisePhotoThumbnail,
   clearResponseCache,
+  discoverSupportedModels,
   generateFlowAiVideo,
   generateOrEditImage,
   generateSocialContent,
@@ -62,6 +64,7 @@ import {
   streamInternationalJobs,
   synthesizeSpeechAudio,
   transcribeVoiceAudio,
+  verifyGeminiConnection,
 } from './gemini';
 import { normalizeLanguageCode } from '../src/constants/languages';
 import type { PaymentMethod, ResponseLanguageCode, SubscriptionPlanId } from '../src/types';
@@ -98,7 +101,7 @@ function logAiOutcome(params: {
     return;
   }
 
-  const normalized = normalizeGeminiError(params.err);
+  const normalized = normalizeGeminiError(params.err, model);
   const status =
     normalized.errorCode === 'rate_limit'
       ? 'rate_limit_429'
@@ -149,8 +152,8 @@ function sendAccessDeniedOrQuota(
   });
 }
 
-function sendAiError(res: express.Response, err: unknown): void {
-  const normalized = normalizeGeminiError(err);
+function sendAiError(res: express.Response, err: unknown, attemptedModel?: string): void {
+  const normalized = normalizeGeminiError(err, attemptedModel);
   res.status(normalized.status).json({
     error: normalized.message,
     errorCode: normalized.errorCode,
@@ -176,12 +179,46 @@ function resolveRequestedLanguage(bodyLang: unknown): ResponseLanguageCode {
   return getFullState().user.preferredLanguage;
 }
 
+function resolveRequestedModel(bodyModelId: unknown): string {
+  const settings = getAppSettings();
+  if (
+    settings.aiSettings.allowUserModelSwitch &&
+    typeof bodyModelId === 'string' &&
+    isValidGeminiModelId(bodyModelId.trim())
+  ) {
+    return bodyModelId.trim();
+  }
+  return getActiveAiModel();
+}
+
 // ============================================================
 // Public Application State & Language Routes
 // ============================================================
 
 app.get('/api/state', (_req, res) => {
   res.json(getFullState());
+});
+
+app.get('/api/gemini/health', async (_req, res) => {
+  const discoveredModels = await discoverSupportedModels(false);
+  res.json({
+    configured: Boolean(process.env.GEMINI_API_KEY),
+    apiVersion: 'v1beta',
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    activeModel: getActiveAiModel(),
+    discoveredModels,
+  });
+});
+
+app.post('/api/gemini/test', async (req, res) => {
+  const { modelId, exactOnly } = req.body ?? {};
+  const adminSession = getAdminSessionFromRequest(req);
+  const targetModel =
+    adminSession.authenticated && typeof modelId === 'string' && isValidGeminiModelId(modelId.trim())
+      ? modelId.trim()
+      : resolveRequestedModel(modelId);
+  const result = await verifyGeminiConnection(targetModel, Boolean(exactOnly));
+  res.status(result.ok ? 200 : result.configured ? 502 : 503).json(result);
 });
 
 app.post('/api/language', (req, res) => {
@@ -260,7 +297,7 @@ app.post('/api/auth/admin-logout', (req, res) => {
 // 1. Education AI
 app.post('/api/ai/education', async (req, res) => {
   const startedAt = Date.now();
-  const { subject, level, question, imageBase64, imageMimeType, responseLanguage, stream } = req.body ?? {};
+  const { subject, level, question, imageBase64, imageMimeType, responseLanguage, modelId, stream } = req.body ?? {};
   const settings = getAppSettings();
   const wantsStream =
     settings.aiSettings.streamEnabled &&
@@ -272,6 +309,7 @@ app.post('/api/ai/education', async (req, res) => {
   }
 
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
   const quotaCheck = checkFeatureAvailable('educationEnabled');
   if (!quotaCheck.ok) {
     sendAccessDeniedOrQuota(res, quotaCheck, '/api/ai/education', 'education', lang);
@@ -289,6 +327,7 @@ app.post('/api/ai/education', async (req, res) => {
           imageBase64,
           imageMimeType,
           responseLanguage: lang,
+          modelId: requestedModel,
         },
         (text) => writeSse({ type: 'delta', text })
       );
@@ -320,8 +359,8 @@ app.post('/api/ai/education', async (req, res) => {
       });
       res.end();
     } catch (err) {
-      logAiOutcome({ endpoint: '/api/ai/education', tool: 'education', language: lang, startedAt, err });
-      const normalized = normalizeGeminiError(err);
+      logAiOutcome({ endpoint: '/api/ai/education', tool: 'education', language: lang, startedAt, model: requestedModel, err });
+      const normalized = normalizeGeminiError(err, requestedModel);
       writeSse({
         type: 'error',
         error: normalized.message,
@@ -343,6 +382,7 @@ app.post('/api/ai/education', async (req, res) => {
         imageBase64,
         imageMimeType,
         responseLanguage: lang,
+        modelId: requestedModel,
       },
       () => {}
     );
@@ -369,15 +409,15 @@ app.post('/api/ai/education', async (req, res) => {
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/education', tool: 'education', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/education', tool: 'education', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 
 // 2. International Jobs (Google Search Grounded + SSE streaming)
 app.post('/api/ai/jobs', async (req, res) => {
   const startedAt = Date.now();
-  const { country, category, skills, responseLanguage, stream } = req.body ?? {};
+  const { country, category, skills, responseLanguage, modelId, stream } = req.body ?? {};
   const settings = getAppSettings();
   const wantsStream =
     settings.aiSettings.streamEnabled &&
@@ -389,6 +429,7 @@ app.post('/api/ai/jobs', async (req, res) => {
   }
 
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
   const quotaCheck = checkQuotaAvailable();
   if (!quotaCheck.ok) {
     sendAccessDeniedOrQuota(res, quotaCheck, '/api/ai/jobs', 'jobs', lang);
@@ -404,6 +445,7 @@ app.post('/api/ai/jobs', async (req, res) => {
           category,
           skills: skills || '',
           responseLanguage: lang,
+          modelId: requestedModel,
         },
         (text) => writeSse({ type: 'delta', text })
       );
@@ -437,8 +479,8 @@ app.post('/api/ai/jobs', async (req, res) => {
       });
       res.end();
     } catch (err) {
-      logAiOutcome({ endpoint: '/api/ai/jobs', tool: 'jobs', language: lang, startedAt, err });
-      const normalized = normalizeGeminiError(err);
+      logAiOutcome({ endpoint: '/api/ai/jobs', tool: 'jobs', language: lang, startedAt, model: requestedModel, err });
+      const normalized = normalizeGeminiError(err, requestedModel);
       writeSse({
         type: 'error',
         error: normalized.message,
@@ -458,6 +500,7 @@ app.post('/api/ai/jobs', async (req, res) => {
         category,
         skills: skills || '',
         responseLanguage: lang,
+        modelId: requestedModel,
       },
       () => {}
     );
@@ -486,15 +529,15 @@ app.post('/api/ai/jobs', async (req, res) => {
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/jobs', tool: 'jobs', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/jobs', tool: 'jobs', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 
 // 3. Health Assistant
 app.post('/api/ai/health', async (req, res) => {
   const startedAt = Date.now();
-  const { mode, query, responseLanguage, stream } = req.body ?? {};
+  const { mode, query, responseLanguage, modelId, stream } = req.body ?? {};
   const settings = getAppSettings();
   const wantsStream =
     settings.aiSettings.streamEnabled &&
@@ -506,6 +549,7 @@ app.post('/api/ai/health', async (req, res) => {
   }
 
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
   const quotaCheck = checkQuotaAvailable();
   if (!quotaCheck.ok) {
     sendAccessDeniedOrQuota(res, quotaCheck, '/api/ai/health', 'health', lang);
@@ -520,6 +564,7 @@ app.post('/api/ai/health', async (req, res) => {
           mode: mode || 'general',
           query: String(query),
           responseLanguage: lang,
+          modelId: requestedModel,
         },
         (text) => writeSse({ type: 'delta', text })
       );
@@ -552,8 +597,8 @@ app.post('/api/ai/health', async (req, res) => {
       });
       res.end();
     } catch (err) {
-      logAiOutcome({ endpoint: '/api/ai/health', tool: 'health', language: lang, startedAt, err });
-      const normalized = normalizeGeminiError(err);
+      logAiOutcome({ endpoint: '/api/ai/health', tool: 'health', language: lang, startedAt, model: requestedModel, err });
+      const normalized = normalizeGeminiError(err, requestedModel);
       writeSse({
         type: 'error',
         error: normalized.message,
@@ -572,6 +617,7 @@ app.post('/api/ai/health', async (req, res) => {
         mode: mode || 'general',
         query: String(query),
         responseLanguage: lang,
+        modelId: requestedModel,
       },
       () => {}
     );
@@ -599,16 +645,17 @@ app.post('/api/ai/health', async (req, res) => {
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/health', tool: 'health', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/health', tool: 'health', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 
 // 4. Social Media AI
 app.post('/api/ai/social', async (req, res) => {
   const startedAt = Date.now();
-  const { platform, topic, tone, responseLanguage } = req.body ?? {};
+  const { platform, topic, tone, responseLanguage, modelId } = req.body ?? {};
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
 
   try {
     if (!topic || !String(topic).trim()) {
@@ -627,18 +674,27 @@ app.post('/api/ai/social', async (req, res) => {
       topic: String(topic),
       tone: tone || 'তথ্যবহুল ও আকর্ষণীয়',
       responseLanguage: lang,
+      modelId: requestedModel,
     });
 
     const updatedQuota = consumeQuota();
 
     const formattedResponse =
-      `### ${result.platform} কনটেন্ট প্যাকেজ\n\n` +
-      `**শিরোনাম:** ${result.titles?.[0] || ''}\n\n` +
-      `**স্ক্রিপ্ট (Hook):** ${result.script?.hook || ''}\n\n` +
-      `**স্ক্রিপ্ট (মূল অংশ):** ${result.script?.body || ''}\n\n` +
-      `**ক্যাপশন:** ${result.caption || ''}\n\n` +
-      `**হ্যাশট্যাগ:** ${(result.hashtags || []).join(' ')}\n\n` +
-      `**AI ভিডিও প্রম্পট:** \`${result.aiVideoPrompt || ''}\``;
+      lang === 'en'
+        ? `### ${result.platform} Content Package\n\n` +
+          `**Title:** ${result.titles?.[0] || ''}\n\n` +
+          `**Script (Hook):** ${result.script?.hook || ''}\n\n` +
+          `**Script (Body):** ${result.script?.body || ''}\n\n` +
+          `**Caption:** ${result.caption || ''}\n\n` +
+          `**Hashtags:** ${(result.hashtags || []).join(' ')}\n\n` +
+          `**AI Video Prompt:** \`${result.aiVideoPrompt || ''}\``
+        : `### ${result.platform} কনটেন্ট প্যাকেজ\n\n` +
+          `**শিরোনাম:** ${result.titles?.[0] || ''}\n\n` +
+          `**স্ক্রিপ্ট (Hook):** ${result.script?.hook || ''}\n\n` +
+          `**স্ক্রিপ্ট (মূল অংশ):** ${result.script?.body || ''}\n\n` +
+          `**ক্যাপশন:** ${result.caption || ''}\n\n` +
+          `**হ্যাশট্যাগ:** ${(result.hashtags || []).join(' ')}\n\n` +
+          `**AI ভিডিও প্রম্পট:** \`${result.aiVideoPrompt || ''}\``;
 
     const historyItem = addHistoryItem({
       tool: 'social',
@@ -653,24 +709,27 @@ app.post('/api/ai/social', async (req, res) => {
       tool: 'social',
       language: lang,
       startedAt,
+      model: requestedModel,
     });
 
     res.json({
       result,
+      modelUsed: requestedModel,
       historyItem,
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/social', tool: 'social', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/social', tool: 'social', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 
 // 5. Video Prompt & Storyboard + Video API Adapter
 app.post('/api/ai/video-prompt', async (req, res) => {
   const startedAt = Date.now();
-  const { idea, mode, style, aspectRatio, responseLanguage } = req.body ?? {};
+  const { idea, mode, style, aspectRatio, responseLanguage, modelId } = req.body ?? {};
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
 
   try {
     if (!idea || !String(idea).trim()) {
@@ -690,6 +749,7 @@ app.post('/api/ai/video-prompt', async (req, res) => {
       style: style || 'সিনেম্যাটিক ডকুমেন্টারি',
       aspectRatio: aspectRatio || '16:9',
       responseLanguage: lang,
+      modelId: requestedModel,
     });
 
     const updatedQuota = consumeQuota();
@@ -707,17 +767,19 @@ app.post('/api/ai/video-prompt', async (req, res) => {
       tool: 'video',
       language: lang,
       startedAt,
+      model: requestedModel,
     });
 
     res.json({
       result,
+      modelUsed: requestedModel,
       apiConnected: Boolean(process.env.GEMINI_API_KEY || process.env.VIDEO_API_KEY),
       historyItem,
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/video-prompt', tool: 'video', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/video-prompt', tool: 'video', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 
@@ -729,11 +791,20 @@ app.post('/api/video/generate', async (req, res) => {
     style,
     aspectRatio,
     durationSec,
+    duration,
     imageBase64,
     imageMimeType,
     responseLanguage,
+    modelId,
   } = req.body ?? {};
+  const resolvedDurationSec =
+    typeof durationSec === 'number'
+      ? durationSec
+      : duration !== undefined
+        ? Number(duration)
+        : 6;
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
 
   try {
     if (!idea || !String(idea).trim()) {
@@ -755,6 +826,7 @@ app.post('/api/video/generate', async (req, res) => {
         style: style || 'সিনেম্যাটিক ডকুমেন্টারি',
         aspectRatio: aspectRatio || '16:9',
         responseLanguage: lang,
+        modelId: requestedModel,
       });
       const updatedQuota = consumeQuota();
       logAiOutcome({
@@ -762,9 +834,11 @@ app.post('/api/video/generate', async (req, res) => {
         tool: 'video',
         language: lang,
         startedAt,
+        model: requestedModel,
       });
       res.json({
         mode: 'storyboard',
+        modelUsed: requestedModel,
         apiConnected: Boolean(process.env.GEMINI_API_KEY),
         result,
         quota: updatedQuota,
@@ -780,7 +854,7 @@ app.post('/api/video/generate', async (req, res) => {
     const generated = await generateFlowAiVideo({
       prompt: videoPrompt,
       aspectRatio: aspectRatio || '16:9',
-      durationSec: typeof durationSec === 'number' ? durationSec : 6,
+      durationSec: Number.isFinite(resolvedDurationSec) ? resolvedDurationSec : 6,
       imageBase64: typeof imageBase64 === 'string' ? imageBase64 : undefined,
       imageMimeType: typeof imageMimeType === 'string' ? imageMimeType : undefined,
     });
@@ -828,8 +902,30 @@ app.post('/api/video/generate', async (req, res) => {
 // 5b. AI Image Generation & Editing (ChatGPT-style text/image-to-image)
 app.post('/api/ai/image-generate', async (req, res) => {
   const startedAt = Date.now();
-  const { prompt, aspectRatio, quality, imageBase64, imageMimeType, responseLanguage } = req.body ?? {};
+  const {
+    prompt,
+    aspectRatio,
+    quality,
+    imageBase64,
+    imageMimeType,
+    referenceImageBase64,
+    referenceMimeType,
+    responseLanguage,
+  } = req.body ?? {};
   const lang = resolveRequestedLanguage(responseLanguage);
+  const resolvedQuality = quality === 'hd' || quality === 'high' ? 'hd' : 'standard';
+  const resolvedImageBase64 =
+    typeof imageBase64 === 'string'
+      ? imageBase64
+      : typeof referenceImageBase64 === 'string'
+        ? referenceImageBase64
+        : undefined;
+  const resolvedImageMime =
+    typeof imageMimeType === 'string'
+      ? imageMimeType
+      : typeof referenceMimeType === 'string'
+        ? referenceMimeType
+        : undefined;
 
   try {
     const quotaCheck = checkFeatureAvailable('imageGenerationEnabled');
@@ -841,9 +937,10 @@ app.post('/api/ai/image-generate', async (req, res) => {
     const generated = await generateOrEditImage({
       prompt: typeof prompt === 'string' ? prompt : '',
       aspectRatio,
-      quality: quality === 'hd' ? 'hd' : 'standard',
-      imageBase64: typeof imageBase64 === 'string' ? imageBase64 : undefined,
-      imageMimeType: typeof imageMimeType === 'string' ? imageMimeType : undefined,
+      quality: resolvedQuality,
+      imageBase64: resolvedImageBase64,
+      imageMimeType: resolvedImageMime,
+      responseLanguage: lang,
     });
 
     const updatedQuota = generated.cached ? getFullState().quota : consumeQuota();
@@ -867,29 +964,32 @@ app.post('/api/ai/image-generate', async (req, res) => {
     res.json({
       imageDataUrl: generated.imageDataUrl,
       description: generated.description,
+      descriptionText: generated.description,
       modelUsed: generated.modelUsed,
       cached: Boolean(generated.cached),
       historyItem,
       quota: updatedQuota,
     });
   } catch (err) {
+    const imgModel = quality === 'hd' ? 'gemini-nano-banana-2.1' : 'gemini-2.5-flash-image';
     logAiOutcome({
       endpoint: '/api/ai/image-generate',
       tool: 'photo',
       language: lang,
       startedAt,
-      model: quality === 'hd' ? 'gemini-nano-banana-2.1' : 'gemini-3.1-flash-lite-image',
+      model: imgModel,
       err,
     });
-    sendAiError(res, err);
+    sendAiError(res, err, imgModel);
   }
 });
 
 // 6. AI Photo & Thumbnail Advisor
 app.post('/api/ai/photo-advisor', async (req, res) => {
   const startedAt = Date.now();
-  const { topic, imageBase64, imageMimeType, responseLanguage } = req.body ?? {};
+  const { topic, imageBase64, imageMimeType, responseLanguage, modelId } = req.body ?? {};
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
 
   try {
     const quotaCheck = checkQuotaAvailable();
@@ -903,6 +1003,7 @@ app.post('/api/ai/photo-advisor', async (req, res) => {
       imageBase64,
       imageMimeType,
       responseLanguage: lang,
+      modelId: requestedModel,
     });
 
     const updatedQuota = consumeQuota();
@@ -911,15 +1012,17 @@ app.post('/api/ai/photo-advisor', async (req, res) => {
       tool: 'photo',
       language: lang,
       startedAt,
+      model: requestedModel,
     });
 
     res.json({
       advice,
+      modelUsed: requestedModel,
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/photo-advisor', tool: 'photo', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/photo-advisor', tool: 'photo', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 
@@ -1296,6 +1399,7 @@ app.post('/api/ai/chat', async (req, res) => {
     imageMimeType,
     imageDataUrl,
     responseLanguage,
+    modelId,
     stream,
   } = req.body ?? {};
   const settings = getAppSettings();
@@ -1310,6 +1414,7 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   const lang = resolveRequestedLanguage(responseLanguage);
+  const requestedModel = resolveRequestedModel(modelId);
   const quotaCheck = checkFeatureAvailable('generalChatEnabled');
   if (!quotaCheck.ok) {
     sendAccessDeniedOrQuota(res, quotaCheck, '/api/ai/chat', 'assistant', lang);
@@ -1333,6 +1438,7 @@ app.post('/api/ai/chat', async (req, res) => {
           imageBase64,
           imageMimeType,
           responseLanguage: lang,
+          modelId: requestedModel,
         },
         (text) => writeSse({ type: 'delta', text })
       );
@@ -1368,8 +1474,8 @@ app.post('/api/ai/chat', async (req, res) => {
       });
       res.end();
     } catch (err) {
-      logAiOutcome({ endpoint: '/api/ai/chat', tool: 'assistant', language: lang, startedAt, err });
-      const normalized = normalizeGeminiError(err);
+      logAiOutcome({ endpoint: '/api/ai/chat', tool: 'assistant', language: lang, startedAt, model: requestedModel, err });
+      const normalized = normalizeGeminiError(err, requestedModel);
       writeSse({
         type: 'error',
         error: normalized.message,
@@ -1390,6 +1496,7 @@ app.post('/api/ai/chat', async (req, res) => {
         imageBase64,
         imageMimeType,
         responseLanguage: lang,
+        modelId: requestedModel,
       },
       () => {}
     );
@@ -1423,8 +1530,8 @@ app.post('/api/ai/chat', async (req, res) => {
       quota: updatedQuota,
     });
   } catch (err) {
-    logAiOutcome({ endpoint: '/api/ai/chat', tool: 'assistant', language: lang, startedAt, err });
-    sendAiError(res, err);
+    logAiOutcome({ endpoint: '/api/ai/chat', tool: 'assistant', language: lang, startedAt, model: requestedModel, err });
+    sendAiError(res, err, requestedModel);
   }
 });
 

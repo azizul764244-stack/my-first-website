@@ -34,15 +34,25 @@ export const AiErrorBanner: React.FC<AiErrorBannerProps> = ({
     errorCode === 'quota_exhausted' ||
     errorCode === 'rate_limit' ||
     errorCode === 'overloaded' ||
-    errorCode === 'not_found';
+    errorCode === 'not_found' ||
+    errorCode === 'network';
+
+  const freeTierAlternatives = (availableModels ?? []).filter(
+    (m) => m.isFreeTier && m.id !== activeModel
+  );
+
   const heading =
-    errorCode === 'quota_exhausted'
-      ? t('AI API Quota Exhausted (429)', 'এআই API কোটা পূর্ণ হয়েছে (৪২৯)')
-      : errorCode === 'rate_limit'
-        ? t('Temporary Rate Limit Reached (429)', 'সাময়িক অনুরোধ সীমা পূর্ণ হয়েছে (৪২৯)')
-        : errorCode === 'overloaded'
-          ? t('AI Server Temporarily Busy (503)', 'এআই সার্ভারে সাময়িক চাপ রয়েছে (৫০৩)')
-          : t('AI Request Failed', 'এআই অনুরোধ সম্পন্ন করা যায়নি');
+    errorCode === 'not_found'
+      ? t('Selected Gemini Model Not Found (404)', 'নির্বাচিত Gemini মডেলটি পাওয়া যায়নি (Error 404)')
+      : errorCode === 'quota_exhausted'
+        ? t('AI API Quota Exhausted (429)', 'এআই API কোটা পূর্ণ হয়েছে (৪২৯)')
+        : errorCode === 'rate_limit'
+          ? t('Temporary Rate Limit Reached (429)', 'সাময়িক অনুরোধ সীমা পূর্ণ হয়েছে (৪২৯)')
+          : errorCode === 'overloaded'
+            ? t('Selected Gemini Model Temporarily Unavailable (503)', 'নির্বাচিত Gemini মডেলটি সাময়িকভাবে অনুপলব্ধ (৫০৩)')
+            : errorCode === 'auth'
+              ? t('Gemini API Connection / Key Issue', 'Gemini API সংযোগ বা কী (Key) সমস্যা')
+              : t('AI Request Failed', 'এআই অনুরোধ সম্পন্ন করা যায়নি');
 
   const handleModelChange = async (nextModelId: GeminiModelId) => {
     if (!onSwitchModel || nextModelId === activeModel) return;
@@ -52,8 +62,15 @@ export const AiErrorBanner: React.FC<AiErrorBannerProps> = ({
       await onSwitchModel(nextModelId);
       setSwitchedNotice(
         t(
-          `Switched to model "${nextModelId}" — you can retry now.`,
-          `মডেল "${nextModelId}"-এ পরিবর্তন হয়েছে — এখন পুনরায় চেষ্টা করতে পারেন।`
+          `Switched to model "${nextModelId}" — click Retry to try again.`,
+          `মডেল "${nextModelId}"-এ পরিবর্তন হয়েছে — এখন "আবার চেষ্টা করুন" বাটনে চাপ দিন।`
+        )
+      );
+    } catch {
+      setSwitchedNotice(
+        t(
+          'Could not switch model right now. Please try again.',
+          'এই মুহূর্তে মডেল পরিবর্তন করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
         )
       );
     } finally {
@@ -103,29 +120,47 @@ export const AiErrorBanner: React.FC<AiErrorBannerProps> = ({
       </div>
 
       {showModelSwitcher && availableModels && availableModels.length > 0 && onSwitchModel && (
-        <div className="pt-2.5 border-t border-rose-200/80 dark:border-rose-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs text-rose-800 dark:text-rose-200">
-            <Cpu className="w-4 h-4 shrink-0" />
-            <span>
-              {t(
-                'Choose another Gemini model (never auto-switches to paid):',
-                'অন্য Gemini মডেল বেছে নিন (স্বয়ংক্রিয় পেইড পরিবর্তন হয় না):'
-              )}
-            </span>
+        <div className="pt-2.5 border-t border-rose-200/80 dark:border-rose-800/70 space-y-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-rose-800 dark:text-rose-200">
+              <Cpu className="w-4 h-4 shrink-0" />
+              <span>
+                {t(
+                  'Manually switch to another free-tier Gemini model (never auto-switches to paid):',
+                  'অন্য একটি ফ্রি-টিয়ার Gemini মডেল নির্বাচন করুন (স্বয়ংক্রিয়ভাবে পেইড মডেলে নেওয়া হয় না):'
+                )}
+              </span>
+            </div>
+            <select
+              aria-label={t('Switch Gemini model', 'Gemini মডেল পরিবর্তন করুন')}
+              disabled={switching || retrying}
+              value={activeModel}
+              onChange={(e) => handleModelChange(e.target.value as GeminiModelId)}
+              className="min-h-[38px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 text-xs font-medium text-slate-800 dark:text-slate-100"
+            >
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.labelBn} ({m.isFreeTier ? t('Free Tier', 'ফ্রি টিয়ার') : t('Paid API', 'পেইড API')})
+                </option>
+              ))}
+            </select>
           </div>
-          <select
-            aria-label={t('Switch Gemini model', 'Gemini মডেল পরিবর্তন করুন')}
-            disabled={switching || retrying}
-            value={activeModel}
-            onChange={(e) => handleModelChange(e.target.value as GeminiModelId)}
-            className="min-h-[38px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 text-xs font-medium text-slate-800 dark:text-slate-100"
-          >
-            {availableModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.labelBn} ({m.isFreeTier ? t('Free Tier', 'ফ্রি টিয়ার') : t('Paid API', 'পেইড API')})
-              </option>
-            ))}
-          </select>
+
+          {freeTierAlternatives.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {freeTierAlternatives.map((alt) => (
+                <button
+                  key={alt.id}
+                  type="button"
+                  disabled={switching || retrying}
+                  onClick={() => handleModelChange(alt.id)}
+                  className="min-h-[34px] px-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 hover:bg-rose-100/70 dark:hover:bg-rose-900/40 disabled:opacity-60 text-xs font-semibold text-rose-900 dark:text-rose-100 transition-colors"
+                >
+                  {t(`Use ${alt.id} (Free Tier)`, `${alt.labelBn} (ফ্রি) চালু করুন`)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

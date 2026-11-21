@@ -7,7 +7,11 @@ import type {
   VideoPromptResult,
 } from '../src/types';
 import { getLanguageOption, normalizeLanguageCode } from '../src/constants/languages';
-import { AVAILABLE_GEMINI_MODELS, getActiveAiModel, getAppSettings } from './store';
+import {
+  AVAILABLE_GEMINI_MODELS,
+  getActiveAiModel,
+  getAppSettings,
+} from './store';
 
 export class GeminiServiceError extends Error {
   status: number;
@@ -61,7 +65,12 @@ function extractRawErrorDetails(err: unknown): ParsedErrorDetails {
   }
 
   const anyErr = err as Record<string, unknown> | undefined;
-  const rawMessage = err instanceof Error ? err.message : String(err ?? '');
+  const rawMessage =
+    err instanceof Error
+      ? err.message
+      : typeof anyErr?.message === 'string'
+        ? anyErr.message
+        : String(err ?? '');
   let code =
     typeof anyErr?.status === 'number'
       ? anyErr.status
@@ -169,12 +178,12 @@ function isQuotaExhaustedSignature(
   return false;
 }
 
-export function normalizeGeminiError(err: unknown): GeminiServiceError {
+export function normalizeGeminiError(err: unknown, attemptedModel?: string): GeminiServiceError {
   if (err instanceof GeminiServiceError) return err;
 
   const { code, status, rawMessage, retryAfterSec, quotaReasonText } = extractRawErrorDetails(err);
   const lower = `${rawMessage} ${quotaReasonText}`.toLowerCase();
-  const activeModel = getActiveAiModel();
+  const activeModel = attemptedModel || getActiveAiModel();
 
   if (
     code === 429 ||
@@ -188,7 +197,7 @@ export function normalizeGeminiError(err: unknown): GeminiServiceError {
     const exhausted = isQuotaExhaustedSignature(lower, activeModel, retryAfterSec);
     if (exhausted) {
       return new GeminiServiceError(
-        'Gemini API-এর নির্ধারিত কোটা শেষ হয়ে গেছে (৪২৯ Resource Exhausted)। অযথা ডুপ্লিকেট অনুরোধ বন্ধ রাখা হয়েছে। অনুগ্রহ করে কোটা রিসেট হওয়া পর্যন্ত অপেক্ষা করুন অথবা মডেল অপশন থেকে ফ্রি টিয়ারের অন্য একটি মডেল (যেমন Gemini 3.1 Flash Lite) বেছে নিয়ে আবার চেষ্টা করুন।',
+        'Gemini API-এর নির্ধারিত কোটা শেষ হয়ে গেছে (৪২৯ Resource Exhausted)। অযথা ডুপ্লিকেট অনুরোধ বন্ধ রাখা হয়েছে। অনুগ্রহ করে কোটা রিসেট হওয়া পর্যন্ত অপেক্ষা করুন অথবা মডেল অপশন থেকে ফ্রি টিয়ারের অন্য একটি মডেল (যেমন Gemini 2.5 Flash Lite) বেছে নিয়ে আবার চেষ্টা করুন।',
         429,
         false,
         'quota_exhausted',
@@ -214,7 +223,7 @@ export function normalizeGeminiError(err: unknown): GeminiServiceError {
     lower.includes('overloaded')
   ) {
     return new GeminiServiceError(
-      'এআই সার্ভারে এখন অতিরিক্ত চাপ রয়েছে (৫০৩)। স্বয়ংক্রিয়ভাবে কয়েকবার চেষ্টা করা হয়েছে—অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন অথবা অন্য একটি Gemini মডেল নির্বাচন করুন।',
+      `নির্বাচিত Gemini মডেলটি (${activeModel}) সাময়িকভাবে অনুপলব্ধ রয়েছে বা সার্ভারে অতিরিক্ত চাপ আছে (৫০৩)। সর্বোচ্চ ৩ বার স্বয়ংক্রিয় চেষ্টা করা হয়েছে—অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন অথবা নিচ থেকে অন্য একটি ফ্রি-টিয়ার Gemini মডেল (যেমন Gemini 2.5 Flash বা Gemini 2.5 Flash Lite) নির্বাচন করুন।`,
       503,
       true,
       'overloaded'
@@ -230,7 +239,7 @@ export function normalizeGeminiError(err: unknown): GeminiServiceError {
     lower.includes('api key')
   ) {
     return new GeminiServiceError(
-      'এআই সার্ভার সংযোগ অনুমোদিত নয়। অনুগ্রহ করে Settings > Secrets প্যানেল থেকে API কী যাচাই করুন।',
+      'এআই সার্ভার সংযোগ অনুমোদিত নয়। অনুগ্রহ করে সার্ভার এনভায়রনমেন্ট থেকে GEMINI_API_KEY যাচাই করুন।',
       403,
       false,
       'auth'
@@ -244,7 +253,7 @@ export function normalizeGeminiError(err: unknown): GeminiServiceError {
     lower.includes('not found')
   ) {
     return new GeminiServiceError(
-      'নির্বাচিত এআই মডেলটি বর্তমানে পাওয়া যাচ্ছে না (৪০৪)। অনুগ্রহ করে মডেল অপশন থেকে অন্য একটি Gemini মডেল নির্বাচন করুন।',
+      `নির্বাচিত Gemini মডেলটি (${activeModel}) বর্তমানে Gemini API (v1beta)-তে পাওয়া যায়নি (Error 404)। অনুগ্রহ করে মডেল অপশন থেকে সমর্থিত একটি ফ্রি মডেল (যেমন Gemini 2.5 Flash বা Gemini 2.5 Flash Lite) নির্বাচন করে আবার চেষ্টা করুন।`,
       404,
       false,
       'not_found'
@@ -290,23 +299,192 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function withGeminiRetry<T>(
-  operation: (model: string) => Promise<T>,
-  shouldAllowRetry: () => boolean = () => true
-): Promise<T> {
-  // Always respect user-configured active model; never auto-switch to paid APIs
-  const activeModel = getActiveAiModel();
-  const maxRetries = 3;
-  let lastError: GeminiServiceError | null = null;
+const MAX_RETRY_ATTEMPTS = 3;
+const DEFAULT_GEMINI_TIMEOUT_MS = 28_000;
+const MAX_TOTAL_RETRY_ELAPSED_MS = 45_000;
+const MODEL_DISCOVERY_TTL_MS = 10 * 60 * 1000;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+let cachedDiscoveredModels: { models: string[]; fetchedAt: number } | null = null;
+let discoveryInFlight: Promise<string[]> | null = null;
+
+function resolveTargetModel(modelOverride?: string): string {
+  if (modelOverride && modelOverride.trim()) {
+    return modelOverride.trim();
+  }
+  return getActiveAiModel();
+}
+
+export async function discoverSupportedModels(forceRefresh = false): Promise<string[]> {
+  if (
+    !forceRefresh &&
+    cachedDiscoveredModels &&
+    Date.now() - cachedDiscoveredModels.fetchedAt < MODEL_DISCOVERY_TTL_MS
+  ) {
+    return cachedDiscoveredModels.models;
+  }
+
+  if (discoveryInFlight) {
+    return discoveryInFlight;
+  }
+
+  discoveryInFlight = (async () => {
     try {
-      return await operation(activeModel);
-    } catch (err) {
-      const normalized = normalizeGeminiError(err);
-      lastError = normalized;
+      if (!process.env.GEMINI_API_KEY) return [];
+      const ai = getAiClient(10_000);
+      const pager = await ai.models.list();
+      const found: string[] = [];
+      for await (const m of pager) {
+        const cleanName = (m.name || '').replace(/^models\//, '').trim();
+        if (!cleanName) continue;
+        const actions = (m as { supportedActions?: string[] }).supportedActions;
+        if (!actions || actions.includes('generateContent')) {
+          found.push(cleanName);
+        }
+      }
+      cachedDiscoveredModels = { models: found, fetchedAt: Date.now() };
+      return found;
+    } catch {
+      return cachedDiscoveredModels?.models ?? [];
+    } finally {
+      discoveryInFlight = null;
+    }
+  })();
 
-      if (attempt < maxRetries && isRetryableTemporaryError(normalized) && shouldAllowRetry()) {
+  return discoveryInFlight;
+}
+
+const FREE_TEXT_FALLBACK_PRIORITY = [
+  'gemini-3.1-flash-lite-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+];
+
+async function pickFreeFallbackCandidates(
+  failedModel: string,
+  customFallbacks?: string[]
+): Promise<string[]> {
+  const discovered = await discoverSupportedModels();
+  const baseList =
+    customFallbacks && customFallbacks.length > 0
+      ? customFallbacks
+      : FREE_TEXT_FALLBACK_PRIORITY;
+
+  const candidates: string[] = [];
+  if (discovered.length > 0) {
+    for (const id of baseList) {
+      if (id !== failedModel && discovered.includes(id) && !candidates.includes(id)) {
+        candidates.push(id);
+      }
+    }
+    // Also consider any live discovered 2.5/3.x flash/flash-lite models (never pro/paid/deprecated)
+    for (const id of discovered) {
+      if (
+        id !== failedModel &&
+        !candidates.includes(id) &&
+        (id.startsWith('gemini-2.5-flash') || id.startsWith('gemini-3.1-flash-lite')) &&
+        !id.includes('-image') &&
+        !id.includes('-tts') &&
+        !id.includes('-live')
+      ) {
+        candidates.push(id);
+      }
+    }
+  }
+
+  for (const id of baseList) {
+    if (id !== failedModel && !candidates.includes(id)) {
+      candidates.push(id);
+    }
+  }
+
+  return candidates.slice(0, 4);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new GeminiServiceError(
+          'নির্বাচিত Gemini মডেল থেকে উত্তর আসতে নির্ধারিত সময় শেষ হয়ে গেছে (Timeout)। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন অথবা অন্য একটি ফ্রি-টিয়ার Gemini মডেল বেছে নিন।',
+          504,
+          true,
+          'network'
+        )
+      );
+    }, timeoutMs);
+
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+export interface RetryOptions {
+  modelId?: string;
+  allowNotFoundFallback?: boolean;
+  fallbackModels?: string[];
+}
+
+export async function withGeminiRetry<T>(
+  operation: (model: string) => Promise<T>,
+  shouldAllowRetry: () => boolean = () => true,
+  timeoutMs = DEFAULT_GEMINI_TIMEOUT_MS,
+  options?: RetryOptions
+): Promise<T> {
+  // Always respect user-configured active model; never auto-switch to paid models
+  let currentModel = resolveTargetModel(options?.modelId);
+  const startedAt = Date.now();
+  const triedModels = new Set<string>();
+  let notFoundFallbackQueue: string[] | null = null;
+  let tempRetryCount = 0;
+
+  while (true) {
+    triedModels.add(currentModel);
+    try {
+      return await withTimeout(operation(currentModel), timeoutMs);
+    } catch (err) {
+      const normalized = normalizeGeminiError(err, currentModel);
+
+      const withinRetryBudget =
+        timeoutMs > DEFAULT_GEMINI_TIMEOUT_MS ||
+        Date.now() - startedAt < MAX_TOTAL_RETRY_ELAPSED_MS;
+
+      // On 404 NOT_FOUND (and before streaming output begins), switch cleanly to verified free-tier alternatives
+      if (
+        normalized.errorCode === 'not_found' &&
+        options?.allowNotFoundFallback !== false &&
+        withinRetryBudget &&
+        shouldAllowRetry()
+      ) {
+        if (!notFoundFallbackQueue) {
+          notFoundFallbackQueue = (
+            await pickFreeFallbackCandidates(currentModel, options?.fallbackModels)
+          ).filter((m) => !triedModels.has(m));
+        }
+        const nextModel = notFoundFallbackQueue.shift();
+        if (nextModel) {
+          currentModel = nextModel;
+          continue;
+        }
+      }
+
+      if (
+        tempRetryCount < MAX_RETRY_ATTEMPTS &&
+        withinRetryBudget &&
+        isRetryableTemporaryError(normalized) &&
+        shouldAllowRetry()
+      ) {
+        const attempt = tempRetryCount;
+        tempRetryCount += 1;
         if (normalized.errorCode === 'rate_limit') {
           // If Gemini demands a long cooldown (>20s), avoid firing guaranteed-to-fail rapid retries
           if (normalized.retryAfterSec && normalized.retryAfterSec > 20) {
@@ -318,7 +496,8 @@ async function withGeminiRetry<T>(
             Math.min(18000, Math.max(expDelay, hintedMs)) + Math.floor(Math.random() * 400);
           await sleep(waitMs);
         } else {
-          const waitMs = 800 * Math.pow(2, attempt) + Math.floor(Math.random() * 300);
+          // Exponential backoff for temporary 503 & transient network errors: ~1s, ~2s, ~4s
+          const waitMs = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 350);
           await sleep(waitMs);
         }
         continue;
@@ -327,8 +506,6 @@ async function withGeminiRetry<T>(
       throw normalized;
     }
   }
-
-  throw lastError ?? new GeminiServiceError('এআই থেকে উত্তর পাওয়া যায়নি।', 500, true, 'unknown');
 }
 
 // ============================================================
@@ -385,9 +562,10 @@ export function clearResponseCache(): number {
 async function runCachedAndCoalesced<T>(
   op: string,
   payload: unknown,
-  runner: () => Promise<T>
+  runner: () => Promise<T>,
+  modelOverride?: string
 ): Promise<T> {
-  const activeModel = getActiveAiModel();
+  const activeModel = resolveTargetModel(modelOverride);
   const key = buildRequestKey(op, activeModel, payload);
 
   const cached = getCachedValue<T>(key);
@@ -414,11 +592,11 @@ async function runCachedAndCoalesced<T>(
   return promise;
 }
 
-function getAiClient(): GoogleGenAI {
+function getAiClient(timeoutMs = DEFAULT_GEMINI_TIMEOUT_MS): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new GeminiServiceError(
-      'GEMINI_API_KEY সার্ভার এনভায়রনমেন্টে কনফিগার করা নেই। Settings > Secrets প্যানেল থেকে API কী সেট করুন।',
+      'GEMINI_API_KEY সার্ভার এনভায়রনমেন্টে কনফিগার করা নেই। Vercel / সার্ভার Settings থেকে API কী সেট করুন।',
       503,
       false,
       'auth'
@@ -427,6 +605,8 @@ function getAiClient(): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
+      apiVersion: 'v1beta',
+      timeout: timeoutMs,
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -435,24 +615,55 @@ function getAiClient(): GoogleGenAI {
 }
 
 function getThinkingConfigForSpeed(model: string) {
-  // Gemini 4 series supports ThinkingLevel.LOW for minimal latency & lower TPM quota usage
-  if (model.startsWith('gemini-4-')) {
+  if (model.startsWith('gemini-4-') || model.startsWith('gemini-3')) {
     return { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } };
+  }
+  if (model.startsWith('gemini-2.5-pro')) {
+    return { thinkingConfig: { thinkingBudget: 1024 } };
+  }
+  if (model.startsWith('gemini-2.5-flash')) {
+    return { thinkingConfig: { thinkingBudget: 0 } };
   }
   return {};
 }
 
 function buildLanguageAndSpeedRules(languageCode?: ResponseLanguageCode): string {
   const code = normalizeLanguageCode(languageCode);
-  const langRule =
-    code === 'auto'
-      ? 'LANGUAGE RULE: Automatically detect the language of the user input and write your entire response naturally in that exact detected language. If the input has no text (e.g. image only), respond in Bengali.'
-      : `LANGUAGE RULE: You MUST write your entire response clearly and naturally in ${getLanguageOption(code).englishName} (${getLanguageOption(code).nativeName}).`;
+  let langRule: string;
+
+  if (code === 'auto') {
+    langRule =
+      'LANGUAGE RULE: Automatically detect the language of the user input and write your entire response naturally in that exact detected language. If the input has no text (e.g. image only), respond in Bengali.';
+  } else if (code === 'bn') {
+    langRule =
+      'CRITICAL LANGUAGE REQUIREMENT (STRICT BN MODE): The user selected Bengali (বাংলা / BN). You MUST write your ENTIRE response—all headings, explanations, step-by-step solutions, summaries, bullet points, and conclusions—in natural, fluent Bengali (বাংলা script). NEVER reply in English even if the user prompt, subject label, or earlier conversation messages are in English (keep only exact formulas, code, or quoted English grammar examples in English, and explain everything in Bengali). Only write primarily in English if the user explicitly asks you in this message to answer in English.';
+  } else if (code === 'en') {
+    langRule =
+      'CRITICAL LANGUAGE REQUIREMENT (STRICT EN MODE): The user selected English (EN). You MUST write your ENTIRE response—all headings, explanations, step-by-step solutions, summaries, bullet points, and conclusions—in clear, natural English. NEVER reply in Bengali even if earlier conversation messages or prompt terms are in Bengali, unless the user explicitly asks you in this message to reply in Bengali.';
+  } else {
+    const opt = getLanguageOption(code);
+    langRule = `CRITICAL LANGUAGE REQUIREMENT: You MUST write your entire response clearly and naturally in ${opt.englishName} (${opt.nativeName}), regardless of the language of prior messages, unless the user explicitly asks for another language in this message.`;
+  }
 
   const speedAndBrevityRule =
-    'STYLE & BREVITY RULE: Be fast, concise, and direct. Never start with unnecessary greetings, filler, or preambles. Jump straight to the answer.';
+    'STYLE & BREVITY RULE: Be fast, accurate, concise, and direct. Never start with unnecessary greetings, filler, or preambles. Jump straight to the answer.';
 
   return `${langRule}\n${speedAndBrevityRule}`;
+}
+
+function buildPromptLanguageFooter(languageCode?: ResponseLanguageCode): string {
+  const code = normalizeLanguageCode(languageCode);
+  if (code === 'bn') {
+    return '[Selected Response Language: BN — Respond completely in natural Bengali (বাংলা), unless explicitly asked for English in this message.]';
+  }
+  if (code === 'en') {
+    return '[Selected Response Language: EN — Respond completely in natural English, unless explicitly asked for Bengali in this message.]';
+  }
+  if (code === 'auto') {
+    return '[Selected Response Language: Auto Detect — Match the user message language.]';
+  }
+  const opt = getLanguageOption(code);
+  return `[Selected Response Language: ${opt.englishName} (${opt.nativeName})]`;
 }
 
 export async function streamEducationQuestion(
@@ -463,6 +674,7 @@ export async function streamEducationQuestion(
     imageBase64?: string;
     imageMimeType?: string;
     responseLanguage?: ResponseLanguageCode;
+    modelId?: string;
   },
   onDelta: (chunkText: string) => void
 ): Promise<{ answer: string; modelUsed: string; cached?: boolean }> {
@@ -476,7 +688,7 @@ export async function streamEducationQuestion(
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  const activeModel = getActiveAiModel();
+  const activeModel = resolveTargetModel(params.modelId);
   const key = buildRequestKey('education', activeModel, cachePayload);
   const cached = getCachedValue<{ answer: string; modelUsed: string }>(key);
   if (cached) {
@@ -502,7 +714,7 @@ export async function streamEducationQuestion(
 
   const promptText = `Subject: ${params.subject}\nLevel: ${params.level}\nQuestion: ${
     params.question || 'Solve and explain the question shown in the image step by step.'
-  }`;
+  }\n\n${buildPromptLanguageFooter(params.responseLanguage)}`;
 
   const contents =
     params.imageBase64 && params.imageMimeType
@@ -554,7 +766,9 @@ export async function streamEducationQuestion(
           }
           return { answer: finalAnswer, modelUsed: model };
         },
-        () => !emittedAnyChunk
+        () => !emittedAnyChunk,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: activeModel }
       );
       setCachedValue(key, result);
       return result;
@@ -573,6 +787,7 @@ export async function streamInternationalJobs(
     category: string;
     skills: string;
     responseLanguage?: ResponseLanguageCode;
+    modelId?: string;
   },
   onDelta: (chunkText: string) => void
 ): Promise<{
@@ -588,7 +803,7 @@ export async function streamInternationalJobs(
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  const activeModel = getActiveAiModel();
+  const activeModel = resolveTargetModel(params.modelId);
   const key = buildRequestKey('jobs', activeModel, cachePayload);
   const cached = getCachedValue<{
     answer: string;
@@ -617,7 +832,7 @@ export async function streamInternationalJobs(
 
   const query = `Country: ${params.country}\nJob Category: ${params.category}\nSkills/Experience: ${
     params.skills || 'General skilled worker'
-  }\nProvide current job outlook, qualifications, estimated salary range, and verified application steps.`;
+  }\nProvide current job outlook, qualifications, estimated salary range, and verified application steps.\n\n${buildPromptLanguageFooter(params.responseLanguage)}`;
 
   let emittedAnyChunk = false;
   const runPromise = (async () => {
@@ -671,7 +886,9 @@ export async function streamInternationalJobs(
             modelUsed: model,
           };
         },
-        () => !emittedAnyChunk
+        () => !emittedAnyChunk,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: activeModel }
       );
       setCachedValue(key, result);
       return result;
@@ -689,6 +906,7 @@ export async function streamHealthGuidance(
     mode: 'general' | 'symptom' | 'medicine';
     query: string;
     responseLanguage?: ResponseLanguageCode;
+    modelId?: string;
   },
   onDelta: (chunkText: string) => void
 ): Promise<{ answer: string; isUrgent: boolean; modelUsed: string; cached?: boolean }> {
@@ -720,7 +938,7 @@ export async function streamHealthGuidance(
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  const activeModel = getActiveAiModel();
+  const activeModel = resolveTargetModel(params.modelId);
   const key = buildRequestKey('health', activeModel, cachePayload);
   const cached = getCachedValue<{ answer: string; isUrgent: boolean; modelUsed: string }>(key);
   if (cached) {
@@ -762,7 +980,7 @@ export async function streamHealthGuidance(
         async (model) => {
           const stream = await ai.models.generateContentStream({
             model,
-            contents: `Category: ${modeLabel}\nUser question: ${params.query}`,
+            contents: `Category: ${modeLabel}\nUser question: ${params.query}\n\n${buildPromptLanguageFooter(params.responseLanguage)}`,
             config: {
               systemInstruction,
               ...getThinkingConfigForSpeed(model),
@@ -791,7 +1009,9 @@ export async function streamHealthGuidance(
 
           return { answer: finalAnswer, isUrgent, modelUsed: model };
         },
-        () => !emittedAnyChunk
+        () => !emittedAnyChunk,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: activeModel }
       );
       setCachedValue(key, result);
       return result;
@@ -809,6 +1029,7 @@ export async function generateSocialContent(params: {
   topic: string;
   tone: string;
   responseLanguage?: ResponseLanguageCode;
+  modelId?: string;
 }): Promise<SocialContentResult> {
   const payload = {
     platform: params.platform,
@@ -817,13 +1038,17 @@ export async function generateSocialContent(params: {
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  return runCachedAndCoalesced('social', payload, async () => {
-    const ai = getAiClient();
+  return runCachedAndCoalesced(
+    'social',
+    payload,
+    async () => {
+      const ai = getAiClient();
 
-    return withGeminiRetry(async (model) => {
+      return withGeminiRetry(
+        async (model) => {
       const response = await ai.models.generateContent({
         model,
-        contents: `Platform: ${params.platform}\nTopic: ${params.topic}\nTone: ${params.tone}\nCreate 3 viral video ideas, catchy titles, a complete concise script (Hook, Body, CTA), post caption, hashtags, and an English AI Video Generation Prompt.`,
+        contents: `Platform: ${params.platform}\nTopic: ${params.topic}\nTone: ${params.tone}\nCreate 3 viral video ideas, catchy titles, a complete concise script (Hook, Body, CTA), post caption, hashtags, and an English AI Video Generation Prompt.\n\n${buildPromptLanguageFooter(params.responseLanguage)}`,
         config: {
           systemInstruction:
             'You are an expert Social Media Content Strategist.\n' +
@@ -874,8 +1099,14 @@ export async function generateSocialContent(params: {
         ...parsed,
         platform: parsed.platform || params.platform,
       };
-    });
-  });
+        },
+        () => true,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: params.modelId }
+      );
+    },
+    params.modelId
+  );
 }
 
 export async function generateVideoPromptAndStoryboard(params: {
@@ -884,6 +1115,7 @@ export async function generateVideoPromptAndStoryboard(params: {
   style: string;
   aspectRatio: string;
   responseLanguage?: ResponseLanguageCode;
+  modelId?: string;
 }): Promise<VideoPromptResult> {
   const payload = {
     idea: params.idea.trim(),
@@ -893,13 +1125,17 @@ export async function generateVideoPromptAndStoryboard(params: {
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  return runCachedAndCoalesced('video-prompt', payload, async () => {
-    const ai = getAiClient();
+  return runCachedAndCoalesced(
+    'video-prompt',
+    payload,
+    async () => {
+      const ai = getAiClient();
 
-    return withGeminiRetry(async (model) => {
+      return withGeminiRetry(
+        async (model) => {
       const response = await ai.models.generateContent({
         model,
-        contents: `Video idea: ${params.idea}\nMode: ${params.mode}\nVisual style: ${params.style}\nAspect ratio: ${params.aspectRatio}\nGenerate a production English AI video prompt, negative prompt, concise notes, and a 4-scene storyboard.`,
+        contents: `Video idea: ${params.idea}\nMode: ${params.mode}\nVisual style: ${params.style}\nAspect ratio: ${params.aspectRatio}\nGenerate a production English AI video prompt, negative prompt, concise notes, and a 4-scene storyboard.\n\n${buildPromptLanguageFooter(params.responseLanguage)}`,
         config: {
           systemInstruction:
             'You are a professional AI Video Director.\n' +
@@ -936,8 +1172,14 @@ export async function generateVideoPromptAndStoryboard(params: {
 
       const jsonStr = (response.text ?? '{}').trim();
       return JSON.parse(jsonStr) as VideoPromptResult;
-    });
-  });
+        },
+        () => true,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: params.modelId }
+      );
+    },
+    params.modelId
+  );
 }
 
 export async function advisePhotoThumbnail(params: {
@@ -945,6 +1187,7 @@ export async function advisePhotoThumbnail(params: {
   imageBase64?: string;
   imageMimeType?: string;
   responseLanguage?: ResponseLanguageCode;
+  modelId?: string;
 }): Promise<{
   headlineSuggestions: string[];
   subheadline: string;
@@ -959,12 +1202,15 @@ export async function advisePhotoThumbnail(params: {
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  return runCachedAndCoalesced('photo-advisor', payload, async () => {
-    const ai = getAiClient();
+  return runCachedAndCoalesced(
+    'photo-advisor',
+    payload,
+    async () => {
+      const ai = getAiClient();
 
     const promptText = `Thumbnail/Photo topic: ${
       params.topic || 'Engaging YouTube video thumbnail'
-    }. Provide 3 short punchy headlines, 1 subheadline, color contrast advice, and photo enhancement advice.`;
+    }. Provide 3 short punchy headlines, 1 subheadline, color contrast advice, and photo enhancement advice.\n\n${buildPromptLanguageFooter(params.responseLanguage)}`;
 
     const contents =
       params.imageBase64 && params.imageMimeType
@@ -981,7 +1227,8 @@ export async function advisePhotoThumbnail(params: {
           }
         : promptText;
 
-    return withGeminiRetry(async (model) => {
+    return withGeminiRetry(
+      async (model) => {
       const response = await ai.models.generateContent({
         model,
         contents,
@@ -1008,8 +1255,14 @@ export async function advisePhotoThumbnail(params: {
 
       const jsonStr = (response.text ?? '{}').trim();
       return JSON.parse(jsonStr);
-    });
-  });
+        },
+        () => true,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: params.modelId }
+      );
+    },
+    params.modelId
+  );
 }
 
 export async function streamAssistantChat(
@@ -1019,6 +1272,7 @@ export async function streamAssistantChat(
     imageBase64?: string;
     imageMimeType?: string;
     responseLanguage?: ResponseLanguageCode;
+    modelId?: string;
   },
   onDelta: (chunkText: string) => void
 ): Promise<{ answer: string; modelUsed: string; cached?: boolean }> {
@@ -1035,7 +1289,7 @@ export async function streamAssistantChat(
     responseLanguage: normalizeLanguageCode(params.responseLanguage),
   };
 
-  const activeModel = getActiveAiModel();
+  const activeModel = resolveTargetModel(params.modelId);
   const key = buildRequestKey('assistant-chat', activeModel, cachePayload);
   const cached = getCachedValue<{ answer: string; modelUsed: string }>(key);
   if (cached) {
@@ -1077,10 +1331,11 @@ export async function streamAssistantChat(
       },
     });
   }
+  const userMsgText =
+    params.message.trim() ||
+    'Analyze this image clearly and explain what is shown or solve any question inside it.';
   currentParts.push({
-    text:
-      params.message.trim() ||
-      'Analyze this image clearly and explain what is shown or solve any question inside it.',
+    text: `${userMsgText}\n\n${buildPromptLanguageFooter(params.responseLanguage)}`,
   });
   contents.push({ role: 'user', parts: currentParts });
 
@@ -1120,7 +1375,9 @@ export async function streamAssistantChat(
 
           return { answer: finalAnswer, modelUsed: model };
         },
-        () => !emittedAnyChunk
+        () => !emittedAnyChunk,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        { modelId: activeModel }
       );
       setCachedValue(key, result);
       return result;
@@ -1145,35 +1402,44 @@ export async function transcribeVoiceAudio(params: {
       ? 'any spoken language (such as Bengali, English, Hindi, Arabic, or Urdu)'
       : `${getLanguageOption(code).englishName} (${getLanguageOption(code).nativeName})`;
 
-  return withGeminiRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-transcribe',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: params.mimeType || 'audio/webm',
-              data: params.audioBase64,
+  return withGeminiRetry(
+    async (model) => {
+      const response = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: params.mimeType || 'audio/webm',
+                data: params.audioBase64,
+              },
             },
-          },
-          {
-            text: `Transcribe the spoken words accurately in ${hintLang}. Output ONLY the exact transcribed text with proper punctuation, no explanations.`,
-          },
-        ],
-      },
-    });
+            {
+              text: `Transcribe the spoken words accurately in ${hintLang}. Output ONLY the exact transcribed text with proper punctuation, no explanations.`,
+            },
+          ],
+        },
+      });
 
-    const text = (response.text ?? '').trim();
-    if (!text) {
-      throw new GeminiServiceError(
-        'অডিও থেকে কথা স্পষ্টভাবে শনাক্ত করা যায়নি। অনুগ্রহ করে আবার বলুন।',
-        422,
-        false,
-        'unknown'
-      );
+      const text = (response.text ?? '').trim();
+      if (!text) {
+        throw new GeminiServiceError(
+          'অডিও থেকে কথা স্পষ্টভাবে শনাক্ত করা যায়নি। অনুগ্রহ করে আবার বলুন।',
+          422,
+          false,
+          'unknown'
+        );
+      }
+      return { text };
+    },
+    () => true,
+    DEFAULT_GEMINI_TIMEOUT_MS,
+    {
+      modelId: undefined,
+      allowNotFoundFallback: true,
+      fallbackModels: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-transcribe'],
     }
-    return { text };
-  });
+  );
 }
 
 export async function synthesizeSpeechAudio(params: {
@@ -1209,32 +1475,41 @@ export async function synthesizeSpeechAudio(params: {
   const ai = getAiClient();
   const runPromise = (async () => {
     try {
-      const result = await withGeminiRetry(async () => {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash-lite-tts',
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: cleanedText }],
+      const result = await withGeminiRetry(
+        async (ttsModel) => {
+          const response = await ai.models.generateContent({
+            model: ttsModel,
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: cleanedText }],
+              },
+            ],
+            config: {
+              responseModalities: ['AUDIO'],
             },
-          ],
-          config: {
-            responseModalities: ['AUDIO'],
-          },
-        });
+          });
 
-        const base64Audio =
-          response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!base64Audio) {
-          throw new GeminiServiceError(
-            'ভয়েস অডিও তৈরি করা যায়নি। ব্রাউজার স্পিচ দিয়ে শোনা যাবে।',
-            502,
-            true,
-            'network'
-          );
+          const base64Audio =
+            response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          if (!base64Audio) {
+            throw new GeminiServiceError(
+              'ভয়েস অডিও তৈরি করা যায়নি। ব্রাউজার স্পিচ দিয়ে শোনা যাবে।',
+              502,
+              true,
+              'network'
+            );
+          }
+          return { audioBase64: base64Audio, mimeType: 'audio/wav' as const };
+        },
+        () => true,
+        DEFAULT_GEMINI_TIMEOUT_MS,
+        {
+          modelId: 'gemini-3.8-flash-lite-tts',
+          allowNotFoundFallback: true,
+          fallbackModels: ['gemini-2.5-flash-preview-tts'],
         }
-        return { audioBase64: base64Audio, mimeType: 'audio/wav' as const };
-      });
+      );
       setCachedValue(key, result);
       return result;
     } finally {
@@ -1252,6 +1527,7 @@ export async function generateOrEditImage(params: {
   quality?: 'standard' | 'hd';
   imageBase64?: string;
   imageMimeType?: string;
+  responseLanguage?: ResponseLanguageCode;
 }): Promise<{
   imageDataUrl: string;
   description: string;
@@ -1273,21 +1549,30 @@ export async function generateOrEditImage(params: {
     ? (params.aspectRatio as (typeof allowedRatios)[number])
     : '1:1';
 
-  const modelId = params.quality === 'hd' ? 'gemini-nano-banana-2.1' : 'gemini-3.1-flash-lite-image';
+  const primaryImageModel =
+    params.quality === 'hd' ? 'gemini-nano-banana-2.1' : 'gemini-2.5-flash-image';
+  const langCode = normalizeLanguageCode(params.responseLanguage);
   const payload = {
     prompt: cleanPrompt,
     aspectRatio,
-    modelId,
+    modelId: primaryImageModel,
+    responseLanguage: langCode,
     imageHash: params.imageBase64
       ? crypto.createHash('sha256').update(params.imageBase64).digest('hex')
       : '',
   };
 
   return runCachedAndCoalesced('image-generate', payload, async () => {
-    const ai = getAiClient();
+    const ai = getAiClient(55_000);
     const effectivePrompt =
       cleanPrompt ||
       'Enhance and stylize this image cleanly with vibrant lighting and crisp detail.';
+    const langInstruction =
+      langCode === 'bn'
+        ? 'Write any accompanying image description in Bengali (বাংলা).'
+        : langCode === 'en'
+          ? 'Write any accompanying image description in English.'
+          : '';
 
     const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
     if (params.imageBase64 && params.imageMimeType) {
@@ -1298,46 +1583,58 @@ export async function generateOrEditImage(params: {
         },
       });
     }
-    parts.push({ text: effectivePrompt });
+    parts.push({ text: langInstruction ? `${effectivePrompt}\n${langInstruction}` : effectivePrompt });
 
-    return withGeminiRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: modelId,
-        contents: { parts },
-        config: {
-          imageConfig: {
-            aspectRatio,
-            ...(modelId === 'gemini-nano-banana-2.1' ? { imageSize: '2K' } : {}),
+    return withGeminiRetry(
+      async (modelToUse) => {
+        const response = await ai.models.generateContent({
+          model: modelToUse,
+          contents: { parts },
+          config: {
+            imageConfig: {
+              aspectRatio,
+              ...(modelToUse === 'gemini-nano-banana-2.1' ? { imageSize: '2K' } : {}),
+            },
           },
-        },
-      });
+        });
 
-      let imageDataUrl = '';
-      let description = '';
-      for (const part of response.candidates?.[0]?.content?.parts ?? []) {
-        if (part.inlineData?.data) {
-          const mime = part.inlineData.mimeType || 'image/png';
-          imageDataUrl = `data:${mime};base64,${part.inlineData.data}`;
-        } else if (part.text) {
-          description = part.text.trim();
+        let imageDataUrl = '';
+        let description = '';
+        for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+          if (part.inlineData?.data) {
+            const mime = part.inlineData.mimeType || 'image/png';
+            imageDataUrl = `data:${mime};base64,${part.inlineData.data}`;
+          } else if (part.text) {
+            description = part.text.trim();
+          }
         }
-      }
 
-      if (!imageDataUrl) {
-        throw new GeminiServiceError(
-          'এই মুহূর্তে ছবি তৈরি করা যায়নি। অনুগ্রহ করে প্রম্পট একটু পরিবর্তন করে আবার চেষ্টা করুন।',
-          502,
-          true,
-          'network'
-        );
-      }
+        if (!imageDataUrl) {
+          throw new GeminiServiceError(
+            'এই মুহূর্তে ছবি তৈরি করা যায়নি। অনুগ্রহ করে প্রম্পট একটু পরিবর্তন করে আবার চেষ্টা করুন।',
+            502,
+            true,
+            'network'
+          );
+        }
 
-      return {
-        imageDataUrl,
-        description,
-        modelUsed: modelId,
-      };
-    });
+        return {
+          imageDataUrl,
+          description,
+          modelUsed: modelToUse,
+        };
+      },
+      () => true,
+      55_000,
+      {
+        modelId: primaryImageModel,
+        allowNotFoundFallback: true,
+        fallbackModels:
+          params.quality === 'hd'
+            ? ['gemini-2.5-flash-image', 'gemini-3.1-flash-lite-image']
+            : ['gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image-preview'],
+      }
+    );
   });
 }
 
@@ -1367,75 +1664,186 @@ export async function generateFlowAiVideo(params: {
     params.aspectRatio?.startsWith('9:16') ? '9:16' : '16:9';
   const durationStr = params.durationSec && params.durationSec >= 8 ? '10s' : '6s';
   const modelId = 'gemini-omni-1.2-flash';
-  const ai = getAiClient();
+  const ai = getAiClient(300_000);
+
+  const inputPayload =
+    params.imageBase64 && params.imageMimeType
+      ? [
+          {
+            type: 'image' as const,
+            mime_type: params.imageMimeType,
+            data: params.imageBase64,
+          },
+          {
+            type: 'text' as const,
+            text: cleanPrompt,
+          },
+        ]
+      : cleanPrompt;
+
+  return withGeminiRetry(
+    async () => {
+      const interaction = await ai.interactions.create(
+        {
+          model: modelId,
+          input: inputPayload,
+          background: false,
+          store: false,
+          stream: false,
+          response_format: {
+            type: 'video',
+            aspect_ratio: normalizedAspect,
+            duration: durationStr,
+            resolution: '720p',
+          },
+        },
+        { timeout: 300_000 }
+      );
+
+      const anyInteraction = interaction as unknown as {
+        output_video?: { data?: string; uri?: string; mime_type?: string };
+        outputs?: Array<{ type?: string; data?: string; uri?: string; mime_type?: string }>;
+      };
+
+      const outputVideo =
+        anyInteraction.output_video ||
+        anyInteraction.outputs?.find((o) => o.type === 'video');
+
+      if (outputVideo?.data) {
+        const mimeType = outputVideo.mime_type || 'video/mp4';
+        return {
+          videoDataUrl: `data:${mimeType};base64,${outputVideo.data}`,
+          mimeType,
+          modelUsed: modelId,
+        };
+      }
+
+      if (outputVideo?.uri) {
+        return {
+          videoUri: outputVideo.uri,
+          mimeType: outputVideo.mime_type || 'video/mp4',
+          modelUsed: modelId,
+        };
+      }
+
+      throw new GeminiServiceError(
+        'ভিডিও আউটপুট পাওয়া যায়নি। অনুগ্রহ করে প্রম্পট পরিবর্তন করে আবার চেষ্টা করুন।',
+        502,
+        true,
+        'network'
+      );
+    },
+    () => true,
+    300_000,
+    {
+      modelId,
+      allowNotFoundFallback: false,
+    }
+  );
+}
+
+export interface GeminiConnectionTestResult {
+  ok: boolean;
+  configured: boolean;
+  apiVersion: 'v1beta';
+  endpoint: string;
+  requestedModel: string;
+  modelUsed?: string;
+  fallbackUsed: boolean;
+  latencyMs: number;
+  sampleReply?: string;
+  discoveredModels: string[];
+  error?: string;
+  errorCode?: AiErrorCode;
+}
+
+export async function verifyGeminiConnection(
+  requestedModel?: string,
+  exactOnly = false
+): Promise<GeminiConnectionTestResult> {
+  const startedAt = Date.now();
+  const targetModel = resolveTargetModel(requestedModel);
+  const configured = Boolean(process.env.GEMINI_API_KEY);
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta';
+
+  if (!configured) {
+    return {
+      ok: false,
+      configured: false,
+      apiVersion: 'v1beta',
+      endpoint,
+      requestedModel: targetModel,
+      fallbackUsed: false,
+      latencyMs: Date.now() - startedAt,
+      discoveredModels: [],
+      error:
+        'GEMINI_API_KEY সার্ভার এনভায়রনমেন্টে কনফিগার করা নেই। Vercel / সার্ভার Settings থেকে API কী সেট করুন।',
+      errorCode: 'auth',
+    };
+  }
+
+  const discoveredModels = await discoverSupportedModels(true);
+  const ai = getAiClient(15_000);
 
   try {
-    const inputPayload =
-      params.imageBase64 && params.imageMimeType
-        ? [
-            {
-              type: 'image' as const,
-              mime_type: params.imageMimeType,
-              data: params.imageBase64,
-            },
-            {
-              type: 'text' as const,
-              text: cleanPrompt,
-            },
-          ]
-        : cleanPrompt;
-
-    const interaction = await ai.interactions.create(
-      {
-        model: modelId,
-        input: inputPayload,
-        background: false,
-        store: false,
-        stream: false,
-        response_format: {
-          type: 'video',
-          aspect_ratio: normalizedAspect,
-          duration: durationStr,
-          resolution: '720p',
-        },
+    const result = await withGeminiRetry(
+      async (modelToUse) => {
+        const response = await ai.models.generateContent({
+          model: modelToUse,
+          contents: 'Reply with exactly: OK',
+          config: {
+            ...getThinkingConfigForSpeed(modelToUse),
+          },
+        });
+        const replyText = (response.text ?? '').trim();
+        if (!replyText) {
+          throw new GeminiServiceError(
+            'Gemini API থেকে খালি উত্তর এসেছে।',
+            502,
+            true,
+            'network'
+          );
+        }
+        return {
+          modelUsed: modelToUse,
+          sampleReply: replyText.slice(0, 60),
+        };
       },
-      { timeout: 300000 }
+      () => true,
+      15_000,
+      {
+        modelId: targetModel,
+        allowNotFoundFallback: !exactOnly,
+      }
     );
 
-    const anyInteraction = interaction as unknown as {
-      output_video?: { data?: string; uri?: string; mime_type?: string };
-      outputs?: Array<{ type?: string; data?: string; uri?: string; mime_type?: string }>;
+    return {
+      ok: true,
+      configured: true,
+      apiVersion: 'v1beta',
+      endpoint,
+      requestedModel: targetModel,
+      modelUsed: result.modelUsed,
+      fallbackUsed: result.modelUsed !== targetModel,
+      latencyMs: Date.now() - startedAt,
+      sampleReply: result.sampleReply,
+      discoveredModels,
     };
-
-    const outputVideo =
-      anyInteraction.output_video ||
-      anyInteraction.outputs?.find((o) => o.type === 'video');
-
-    if (outputVideo?.data) {
-      const mimeType = outputVideo.mime_type || 'video/mp4';
-      return {
-        videoDataUrl: `data:${mimeType};base64,${outputVideo.data}`,
-        mimeType,
-        modelUsed: modelId,
-      };
-    }
-
-    if (outputVideo?.uri) {
-      return {
-        videoUri: outputVideo.uri,
-        mimeType: outputVideo.mime_type || 'video/mp4',
-        modelUsed: modelId,
-      };
-    }
-
-    throw new GeminiServiceError(
-      'ভিডিও আউটপুট পাওয়া যায়নি। অনুগ্রহ করে প্রম্পট পরিবর্তন করে আবার চেষ্টা করুন।',
-      502,
-      true,
-      'network'
-    );
   } catch (err) {
-    throw normalizeGeminiError(err);
+    const normalized = normalizeGeminiError(err, targetModel);
+    return {
+      ok: false,
+      configured: true,
+      apiVersion: 'v1beta',
+      endpoint,
+      requestedModel: targetModel,
+      fallbackUsed: false,
+      latencyMs: Date.now() - startedAt,
+      discoveredModels,
+      error: normalized.message,
+      errorCode: normalized.errorCode,
+    };
   }
 }
+
 

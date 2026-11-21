@@ -84,10 +84,11 @@ export const SocialPage: React.FC<SocialPageProps> = ({
         result: SocialContentResult;
         historyItem: HistoryItem;
         quota: QuotaState;
-      }>('/api/ai/social', { platform, topic, tone, responseLanguage });
+      }>('/api/ai/social', { platform, topic, tone, responseLanguage, modelId: activeModel });
       setResult(data.result);
       onResultSuccess(data.historyItem, data.quota);
     } catch (err) {
+      setResult(null);
       if (err instanceof AiClientError) {
         setError(err.message);
         setErrorCode(err.errorCode);

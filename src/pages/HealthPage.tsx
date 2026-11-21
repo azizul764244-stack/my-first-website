@@ -82,7 +82,7 @@ export const HealthPage: React.FC<HealthPageProps> = ({
         quota: QuotaState;
       }>(
         '/api/ai/health',
-        { mode, query, responseLanguage },
+        { mode, query, responseLanguage, modelId: activeModel },
         {
           onDelta: (chunk) => {
             setAnswer((prev) => (prev ?? '') + chunk);
@@ -95,7 +95,8 @@ export const HealthPage: React.FC<HealthPageProps> = ({
         }
       );
     } catch (err) {
-      if (err instanceof AiClientError) {
+      setAnswer(null);
+      if (err instanceof Error && err instanceof AiClientError) {
         setError(err.message);
         setErrorCode(err.errorCode);
         setRetryAfterSec(err.retryAfterSec);

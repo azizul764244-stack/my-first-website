@@ -145,7 +145,7 @@ export function createFallbackOfflineState(): AppStateResponse {
     },
     integrations: {
       geminiConnected: true,
-      geminiModel: 'gemini-4-hydrogen',
+      geminiModel: 'gemini-3.1-flash-lite-preview',
       availableModels: [],
       searchGroundingReady: true,
       imageGenReady: true,

@@ -1392,6 +1392,19 @@ const ApiAndModelsTab: React.FC<{
   const { integrations, overview, apiLogs } = dashboard;
   const [selectedModel, setSelectedModel] = useState<GeminiModelId>(integrations.geminiModel);
   const [logFilter, setLogFilter] = useState<'all' | '429' | 'error' | 'success'>('all');
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<{
+    ok: boolean;
+    apiVersion: string;
+    endpoint: string;
+    requestedModel: string;
+    modelUsed?: string;
+    fallbackUsed?: boolean;
+    latencyMs: number;
+    sampleReply?: string;
+    discoveredModels: string[];
+    error?: string;
+  } | null>(null);
 
   useEffect(() => {
     setSelectedModel(integrations.geminiModel);
@@ -1419,6 +1432,31 @@ const ApiAndModelsTab: React.FC<{
       onNotify(`সক্রিয় Gemini মডেল "${selectedModel}"-এ পরিবর্তন করা হয়েছে।`);
     } else {
       onNotify(data.error || 'মডেল আপডেট করা যায়নি।', 'error');
+    }
+  };
+
+  const handleTestGeminiConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const res = await adminFetch('/api/gemini/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ modelId: selectedModel }),
+      });
+      const data = await res.json();
+      setConnectionTestResult(data);
+      if (data.ok) {
+        onNotify(
+          `সংযোগ সফল! ব্যবহৃত মডেল: ${data.modelUsed} (${data.latencyMs}ms)`
+        );
+      } else {
+        onNotify(data.error || 'Gemini API সংযোগ পরীক্ষা ব্যর্থ হয়েছে।', 'error');
+      }
+    } catch {
+      onNotify('সার্ভারের সাথে সংযোগ করে পরীক্ষা চালানো যায়নি।', 'error');
+    } finally {
+      setTestingConnection(false);
     }
   };
 
@@ -1520,6 +1558,20 @@ const ApiAndModelsTab: React.FC<{
 
             <button
               type="button"
+              disabled={testingConnection}
+              onClick={handleTestGeminiConnection}
+              className="min-h-[42px] px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+            >
+              {testingConnection ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Activity className="w-3.5 h-3.5" />
+              )}
+              <span>{testingConnection ? 'যাচাই চলছে...' : 'সংযোগ ও মডেল যাচাই (Live Test)'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleClearCache}
               className="min-h-[42px] px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold inline-flex items-center gap-1.5"
             >
@@ -1527,6 +1579,44 @@ const ApiAndModelsTab: React.FC<{
               <span>AI রেসপন্স ক্যাশ পরিষ্কার</span>
             </button>
           </div>
+
+          {connectionTestResult && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                connectionTestResult.ok
+                  ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100'
+                  : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-100'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 font-bold">
+                <span>
+                  {connectionTestResult.ok
+                    ? `লাইভ সংযোগ সফল (${connectionTestResult.apiVersion})`
+                    : `লাইভ সংযোগ ব্যর্থ (${connectionTestResult.apiVersion})`}
+                </span>
+                <span className="font-mono text-[11px]">{connectionTestResult.latencyMs}ms</span>
+              </div>
+              <p className="text-[11px] opacity-90">
+                অনুরোধকৃত মডেল: <span className="font-mono">{connectionTestResult.requestedModel}</span>
+                {connectionTestResult.modelUsed ? (
+                  <>
+                    {' '}· ব্যবহৃত: <span className="font-mono">{connectionTestResult.modelUsed}</span>
+                  </>
+                ) : null}
+                {connectionTestResult.fallbackUsed ? ' (স্বয়ংক্রিয় ফ্রি ফ্যালব্যাক)' : ''}
+              </p>
+              {connectionTestResult.discoveredModels.length > 0 && (
+                <p className="text-[11px] opacity-80">
+                  সমর্থিত GenerateContent মডেল পাওয়া গেছে: {connectionTestResult.discoveredModels.length}টি
+                </p>
+              )}
+              {connectionTestResult.error && (
+                <p className="font-medium text-rose-700 dark:text-rose-300">
+                  {connectionTestResult.error}
+                </p>
+              )}
+            </div>
+          )}
         </form>
 
         {/* Server Integration Status */}
@@ -2368,7 +2458,7 @@ const SettingsAndAdsTab: React.FC<{
           <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 space-y-1 text-[11px] text-blue-900 dark:text-blue-200">
             <p className="font-bold">সক্রিয় ৩ জায়গার অ্যাড ও Pro নীতিমালা:</p>
             <p>১. অ্যাপে ঢোকার সময়: ১টি ফুলস্ক্রিন Ad (৫ সেকেন্ড পর Skip/Close)</p>
-            <p>২. সব সময় ব্যানার: Home, Chat ও Tools পেজে ১টি স্থায়ী ছোট Banner Ad</p>
+            <p>২. পরিচ্ছন্ন লেআউট ব্যানার: শুধুমাত্র Home ও Tools পেজের নিচে ১টি নন-ফ্লোটিং Banner Ad (চ্যাট, উত্তর, ইনপুট বা ন্যাভিগেশনের ওপর কোনো ফ্লোটিং অ্যাড নেই)</p>
             <p>৩. শিক্ষা বাধ্যতামূলক Ad: প্রশ্ন করার পর উত্তর দেখানোর আগে ৫ সেকেন্ডের Forced Ad</p>
             <p className="font-semibold text-emerald-700 dark:text-emerald-300 pt-0.5">
               ✓ Pro প্ল্যানে সব Ad স্বয়ংক্রিয়ভাবে বন্ধ থাকে (অফলাইন সেভড ডেটা ফ্রি ও প্রো সবার জন্য চালু)

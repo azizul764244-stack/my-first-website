@@ -162,6 +162,7 @@ export const VideoStudioPage: React.FC<VideoStudioPageProps> = ({
           style,
           aspectRatio,
           responseLanguage,
+          modelId: integrations.geminiModel,
         });
         setResult(data.result);
         setVideoOutputUrl(null);
@@ -186,6 +187,7 @@ export const VideoStudioPage: React.FC<VideoStudioPageProps> = ({
           imageBase64: tab === 'image-to-video' ? sourceBase64 : undefined,
           imageMimeType: tab === 'image-to-video' ? sourceMimeType : undefined,
           responseLanguage,
+          modelId: integrations.geminiModel,
         });
 
         const mediaUrl = data.videoDataUrl || data.videoUri || null;
@@ -206,6 +208,8 @@ export const VideoStudioPage: React.FC<VideoStudioPageProps> = ({
         onResultSuccess(data.historyItem, data.quota);
       }
     } catch (err) {
+      setResult(null);
+      setVideoOutputUrl(null);
       if (err instanceof AiClientError) {
         setError(err.message);
         setErrorCode(err.errorCode);
